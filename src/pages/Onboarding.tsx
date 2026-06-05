@@ -1,4 +1,4 @@
-import { useState, FormEvent, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
@@ -43,8 +43,7 @@ export function Onboarding() {
     }
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
+  async function handleSubmit() {
     if (nameStatus !== 'available' || !session) return
     setSaving(true)
     setError(null)
@@ -98,7 +97,7 @@ export function Onboarding() {
             ⚠️ Your team name is permanent and cannot be changed once set.
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={e => { e.preventDefault(); void handleSubmit() }} className="space-y-4">
             <div>
               <label htmlFor="team-name" className="block text-sm font-medium text-gray-700 mb-1">
                 Team name

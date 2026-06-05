@@ -1,4 +1,4 @@
-import { useEffect, useState, FormEvent, KeyboardEvent } from 'react'
+import { useEffect, useState, KeyboardEvent } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../contexts/AuthContext'
@@ -59,8 +59,7 @@ export function AdminResultEditor() {
     setList(list.filter((_, i) => i !== idx))
   }
 
-  async function handleSave(e: FormEvent) {
-    e.preventDefault()
+  async function handleSave() {
     if (!match || !session) return
     setSaving(true)
     setSaveMsg(null)
@@ -129,7 +128,7 @@ export function AdminResultEditor() {
         <p className="font-bold text-xl">{match.home_team} vs {match.away_team}</p>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-5">
+      <form onSubmit={e => { e.preventDefault(); void handleSave() }} className="space-y-5">
         {/* Scores */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
           <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">90-min score</p>

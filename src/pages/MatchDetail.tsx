@@ -1,4 +1,4 @@
-import { useEffect, useState, FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
@@ -54,8 +54,7 @@ export function MatchDetail() {
     load()
   }, [id, session])
 
-  async function handleSave(e: FormEvent) {
-    e.preventDefault()
+  async function handleSave() {
     if (!match || !playerName.trim()) return
     setSaving(true)
     setSaveError(null)
@@ -170,12 +169,12 @@ interface FormProps {
   firstTeam: 'home' | 'away' | 'none'; setFirstTeam: (v: 'home' | 'away' | 'none') => void
   playerName: string; setPlayerName: (v: string) => void
   saving: boolean; saved: boolean; saveError: string | null
-  onSubmit: (e: FormEvent) => void
+  onSubmit: () => void
 }
 
 function PredictionForm({ match, homeScore, setHomeScore, awayScore, setAwayScore, firstTeam, setFirstTeam, playerName, setPlayerName, saving, saved, saveError, onSubmit }: FormProps) {
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form onSubmit={e => { e.preventDefault(); onSubmit() }} className="space-y-5">
       {/* Score */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
         <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">Final score (90 min)</p>
