@@ -60,11 +60,14 @@ export function Leaderboard() {
                           <span className="ml-2 text-xs font-normal text-green-600">(you)</span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-right font-bold text-gray-800">
-                        {Number(row.total_points).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                      <td className="py-3 px-4 text-right">
+                        <span className={`text-xl font-black tabular-nums ${isMe ? 'text-green-700' : i === 0 ? 'text-green-800' : 'text-gray-800'}`}>
+                          {Number(row.total_points).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                        </span>
+                        <span className="text-xs text-gray-400 ml-1">pts</span>
                       </td>
-                      <td className="py-3 px-4 text-right text-gray-400 hidden sm:table-cell">
-                        {Number(row.scoring_matches)} matches
+                      <td className="py-3 px-4 text-right text-gray-400 hidden sm:table-cell text-xs">
+                        {Number(row.scoring_matches)} scored
                       </td>
                     </tr>
                   )

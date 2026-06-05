@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { Header } from '../components/Header'
-import type { Match, Prediction } from '../types/database'
+import type { Match, Prediction, MatchEvent } from '../types/database'
 import { getMatchState, formatKickoffTime, stageLabel, firstTeamLabel } from '../lib/utils'
 
 type PredictionWithTeam = Prediction & { profiles: { team_name: string } }
@@ -16,6 +16,7 @@ export function MatchDetail() {
   const [match, setMatch] = useState<Match | null>(null)
   const [myPrediction, setMyPrediction] = useState<Prediction | null>(null)
   const [allPredictions, setAllPredictions] = useState<PredictionWithTeam[]>([])
+  const [matchEvents, setMatchEvents] = useState<MatchEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -30,10 +31,11 @@ export function MatchDetail() {
   useEffect(() => {
     async function load() {
       const matchId = Number(id)
-      const [{ data: mData }, { data: pData }, { data: allData }] = await Promise.all([
+      const [{ data: mData }, { data: pData }, { data: allData }, { data: evData }] = await Promise.all([
         supabase.from('matches').select('*').eq('id', matchId).single(),
         supabase.from('predictions').select('*').eq('match_id', matchId).eq('user_id', session!.user.id).maybeSingle(),
         supabase.from('predictions').select('*, profiles(team_name)').eq('match_id', matchId),
+        supabase.from('match_events').select('*').eq('match_id', matchId),
       ])
 
       const m = mData as Match | null
@@ -42,6 +44,7 @@ export function MatchDetail() {
       setMatch(m)
       setMyPrediction(p)
       setAllPredictions((allData ?? []) as PredictionWithTeam[])
+      setMatchEvents((evData ?? []) as MatchEvent[])
 
       if (p) {
         setHomeScore(p.pred_home_score)
@@ -113,27 +116,29 @@ export function MatchDetail() {
     <>
       <Header />
       <main className="max-w-2xl mx-auto px-4 py-4">
-        {/* Back */}
         <button onClick={() => navigate(-1)} className="text-sm text-gray-400 hover:text-gray-600 mb-4 flex items-center gap-1">
           ← Back
         </button>
 
         {/* Match header */}
         <div className="bg-green-800 text-white rounded-2xl px-5 py-4 mb-4">
-          <p className="text-xs uppercase tracking-widest text-green-300 mb-1">
+          <p className="text-xs uppercase tracking-widest text-green-300 mb-2">
             {stageLabel(match.stage, match.group_label)}
           </p>
-          <div className="flex items-center justify-between gap-2">
-            <span className="font-bold text-lg leading-tight">{match.home_team}</span>
-            <span className="text-green-400 text-sm font-medium shrink-0">
-              {state === 'finished' && match.home_score != null
-                ? `${match.home_score} – ${match.away_score}`
-                : 'vs'}
-            </span>
-            <span className="font-bold text-lg leading-tight text-right">{match.away_team}</span>
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-bold text-lg leading-tight flex-1">{match.home_team}</span>
+            {state === 'finished' && match.home_score != null ? (
+              <span className="text-3xl font-black text-white shrink-0 tabular-nums">
+                {match.home_score} – {match.away_score}
+              </span>
+            ) : (
+              <span className="text-green-400 text-sm font-medium shrink-0">vs</span>
+            )}
+            <span className="font-bold text-lg leading-tight text-right flex-1">{match.away_team}</span>
           </div>
-          <p className="text-green-300 text-xs mt-1">
-            {formatKickoffTime(match.kickoff_utc)} local · {state === 'open' ? 'Open for predictions' : state === 'locked' ? 'In progress' : 'Full time'}
+          <p className="text-green-300 text-xs mt-2">
+            {formatKickoffTime(match.kickoff_utc)} local ·{' '}
+            {state === 'open' ? 'Open for predictions' : state === 'locked' ? 'In progress' : 'Full time'}
           </p>
         </div>
 
@@ -152,6 +157,7 @@ export function MatchDetail() {
             match={match}
             myPrediction={myPrediction}
             allPredictions={allPredictions}
+            matchEvents={matchEvents}
             userId={session!.user.id}
           />
         )}
@@ -206,7 +212,9 @@ function PredictionForm({ match, homeScore, setHomeScore, awayScore, setAwayScor
                   : 'bg-white border-gray-200 text-gray-600 hover:border-green-400'
               }`}
             >
-              {opt === 'home' ? match.home_team.split(' ').slice(-1)[0] : opt === 'away' ? match.away_team.split(' ').slice(-1)[0] : 'No goals'}
+              {opt === 'home' ? match.home_team.split(' ').slice(-1)[0]
+                : opt === 'away' ? match.away_team.split(' ').slice(-1)[0]
+                : 'No goals'}
             </button>
           ))}
         </div>
@@ -214,14 +222,16 @@ function PredictionForm({ match, homeScore, setHomeScore, awayScore, setAwayScor
 
       {/* Player pick */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-3">Player pick</p>
-        <p className="text-xs text-gray-400 mb-2">+2 if they score, +1 if they assist (max 3 pts)</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-0.5">
+          Player pick <span className="normal-case font-normal text-gray-400">(last name)</span>
+        </p>
+        <p className="text-xs text-gray-400 mb-3">+2 if they score · +1 if they assist · max 3 pts</p>
         <input
           type="text"
           required
           value={playerName}
           onChange={e => setPlayerName(e.target.value)}
-          placeholder="e.g. Mbappe"
+          placeholder="Last name only — e.g. Mbappé"
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
         />
       </div>
@@ -263,10 +273,11 @@ function Stepper({ value, onChange }: { value: number; onChange: (v: number) => 
 
 // ─── Locked / finished view ────────────────────────────────────────────────────
 
-function LockedView({ match, myPrediction, allPredictions, userId }: {
+function LockedView({ match, myPrediction, allPredictions, matchEvents, userId }: {
   match: Match
   myPrediction: Prediction | null
   allPredictions: PredictionWithTeam[]
+  matchEvents: MatchEvent[]
   userId: string
 }) {
   const state = getMatchState(match.kickoff_utc, match.status)
@@ -296,8 +307,8 @@ function LockedView({ match, myPrediction, allPredictions, userId }: {
             {isFinished && (
               <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
                 <span className="text-sm text-gray-500">Points earned</span>
-                <span className="font-bold text-green-700 text-lg">
-                  {myPrediction.base_points} × {multiplierForStage(match.stage)} = {myPrediction.points} pts
+                <span className="text-2xl font-black text-green-700">
+                  {myPrediction.points} pts
                 </span>
               </div>
             )}
@@ -306,6 +317,11 @@ function LockedView({ match, myPrediction, allPredictions, userId }: {
           <p className="text-gray-400 text-sm italic">You didn't submit a prediction for this match.</p>
         )}
       </div>
+
+      {/* Score breakdown — only for finished matches with a prediction */}
+      {isFinished && myPrediction && (
+        <ScoreBreakdown match={match} prediction={myPrediction} events={matchEvents} />
+      )}
 
       {/* All predictions (visible after kickoff) */}
       {allPredictions.length > 0 && (
@@ -325,24 +341,27 @@ function LockedView({ match, myPrediction, allPredictions, userId }: {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {allPredictions.map(p => (
-                  <tr key={p.id} className={p.user_id === userId ? 'bg-green-50' : ''}>
-                    <td className="py-2 pr-2 font-medium text-gray-800 text-xs">
-                      {p.profiles.team_name}
-                      {p.user_id === userId && <span className="ml-1 text-green-600 text-xs">(you)</span>}
-                    </td>
-                    <td className="py-2 text-center font-mono text-gray-700">
-                      {p.pred_home_score}–{p.pred_away_score}
-                    </td>
-                    <td className="py-2 text-center text-gray-600 text-xs">
-                      {firstTeamLabel(p.pred_first_team)}
-                    </td>
-                    <td className="py-2 text-gray-600 text-xs">{p.pred_player_name}</td>
-                    {isFinished && (
-                      <td className="py-2 text-right font-semibold text-green-700">{p.points}</td>
-                    )}
-                  </tr>
-                ))}
+                {allPredictions
+                  .slice()
+                  .sort((a, b) => Number(b.points) - Number(a.points))
+                  .map(p => (
+                    <tr key={p.id} className={p.user_id === userId ? 'bg-green-50' : ''}>
+                      <td className="py-2 pr-2 font-medium text-gray-800 text-xs">
+                        {p.profiles.team_name}
+                        {p.user_id === userId && <span className="ml-1 text-green-600 text-xs">(you)</span>}
+                      </td>
+                      <td className="py-2 text-center font-mono text-gray-700">
+                        {p.pred_home_score}–{p.pred_away_score}
+                      </td>
+                      <td className="py-2 text-center text-gray-600 text-xs">
+                        {firstTeamLabel(p.pred_first_team)}
+                      </td>
+                      <td className="py-2 text-gray-600 text-xs">{p.pred_player_name}</td>
+                      {isFinished && (
+                        <td className="py-2 text-right font-bold text-green-700">{p.points}</td>
+                      )}
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -352,9 +371,130 @@ function LockedView({ match, myPrediction, allPredictions, userId }: {
   )
 }
 
-function multiplierForStage(stage: string): string {
-  const m: Record<string, string> = {
-    group: '1.0', r32: '1.5', r16: '2.0', qf: '2.5', sf: '3.0', '3rd': '2.0', final: '4.0',
+// ─── Score breakdown card ──────────────────────────────────────────────────────
+
+const STAGE_MULTIPLIERS: Record<string, number> = {
+  group: 1.0, r32: 1.5, r16: 2.0, qf: 2.5, sf: 3.0, '3rd': 2.0, final: 4.0,
+}
+
+function ScoreBreakdown({ match, prediction, events }: {
+  match: Match; prediction: Prediction; events: MatchEvent[]
+}) {
+  const mult = STAGE_MULTIPLIERS[match.stage] ?? 1.0
+
+  // Scoreline component
+  const predOutcome = prediction.pred_home_score > prediction.pred_away_score ? 'home'
+    : prediction.pred_home_score < prediction.pred_away_score ? 'away' : 'draw'
+  const actualOutcome = match.home_score! > match.away_score! ? 'home'
+    : match.home_score! < match.away_score! ? 'away' : 'draw'
+
+  let scorelinePts: number
+  let scorelineReason: string
+  if (prediction.pred_home_score === match.home_score && prediction.pred_away_score === match.away_score) {
+    scorelinePts = 5; scorelineReason = 'Exact scoreline'
+  } else if (
+    predOutcome === actualOutcome &&
+    (prediction.pred_home_score - prediction.pred_away_score) === (match.home_score! - match.away_score!)
+  ) {
+    scorelinePts = 3; scorelineReason = 'Right result & goal difference'
+  } else if (predOutcome === actualOutcome) {
+    scorelinePts = 2; scorelineReason = 'Right result'
+  } else {
+    scorelinePts = 0; scorelineReason = 'Wrong result'
   }
-  return m[stage] ?? '1.0'
+
+  // First scorer component
+  const firstCorrect = prediction.pred_first_team === match.first_scorer_team
+  const firstPts = firstCorrect ? 1 : 0
+
+  // Player component
+  const pl = prediction.pred_player_name.toLowerCase()
+  const playerScored  = events.some(e => e.event_type === 'goal'   && e.player_name.toLowerCase() === pl)
+  const playerAssisted = events.some(e => e.event_type === 'assist' && e.player_name.toLowerCase() === pl)
+  const playerPts = (playerScored ? 2 : 0) + (playerAssisted ? 1 : 0)
+
+  const basePts = scorelinePts + firstPts + playerPts
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">Score breakdown</p>
+
+      <div className="space-y-3">
+        {/* Scoreline */}
+        <BreakdownRow
+          label="Scoreline"
+          detail={`You: ${prediction.pred_home_score}–${prediction.pred_away_score}  ·  Actual: ${match.home_score}–${match.away_score}`}
+          tag={scorelineReason}
+          correct={scorelinePts > 0}
+          pts={scorelinePts}
+          maxPts={5}
+        />
+
+        {/* First scorer */}
+        <BreakdownRow
+          label="First team to score"
+          detail={`You: ${firstTeamLabel(prediction.pred_first_team)}  ·  Actual: ${firstTeamLabel(match.first_scorer_team ?? 'none')}`}
+          tag={firstCorrect ? 'Correct' : 'Wrong'}
+          correct={firstCorrect}
+          pts={firstPts}
+          maxPts={1}
+        />
+
+        {/* Player */}
+        <BreakdownRow
+          label={`Player — ${prediction.pred_player_name}`}
+          detail={[
+            playerScored   ? '⚽ scored'   : null,
+            playerAssisted ? '🎯 assisted' : null,
+            !playerScored && !playerAssisted ? 'No goal or assist' : null,
+          ].filter(Boolean).join('  ·  ')}
+          tag={playerPts > 0 ? `+${playerPts} pts` : 'No pts'}
+          correct={playerPts > 0}
+          pts={playerPts}
+          maxPts={3}
+        />
+      </div>
+
+      {/* Totals */}
+      <div className="mt-4 pt-3 border-t border-gray-100 space-y-1.5">
+        <div className="flex justify-between text-sm text-gray-500">
+          <span>Base score</span>
+          <span className="font-semibold text-gray-700">{basePts} / 9 pts</span>
+        </div>
+        <div className="flex justify-between text-sm text-gray-500">
+          <span>Stage multiplier ({stageLabel(match.stage, match.group_label)})</span>
+          <span className="font-semibold text-gray-700">× {mult}</span>
+        </div>
+        <div className="flex justify-between items-baseline pt-1">
+          <span className="text-base font-bold text-gray-800">Total</span>
+          <span className="text-2xl font-black text-green-700">{prediction.points} pts</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BreakdownRow({ label, detail, tag, correct, pts, maxPts }: {
+  label: string; detail: string; tag: string; correct: boolean; pts: number; maxPts: number
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-700">{label}</p>
+        <p className="text-xs text-gray-400 mt-0.5">{detail}</p>
+      </div>
+      <div className="flex items-center gap-2 shrink-0 mt-0.5">
+        <span className={`text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap ${
+          correct ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+        }`}>
+          {tag}
+        </span>
+        <span className={`text-sm font-bold w-12 text-right tabular-nums ${
+          pts > 0 ? 'text-green-700' : 'text-gray-300'
+        }`}>
+          {pts} / {maxPts}
+        </span>
+      </div>
+    </div>
+  )
 }
