@@ -17,6 +17,7 @@ export function MatchDetail() {
   const [myPrediction, setMyPrediction] = useState<Prediction | null>(null)
   const [allPredictions, setAllPredictions] = useState<PredictionWithTeam[]>([])
   const [matchEvents, setMatchEvents] = useState<MatchEvent[]>([])
+  const [players, setPlayers] = useState<{ team: string; name: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -45,6 +46,16 @@ export function MatchDetail() {
       setMyPrediction(p)
       setAllPredictions((allData ?? []) as PredictionWithTeam[])
       setMatchEvents((evData ?? []) as MatchEvent[])
+
+      // Fetch squad players for both teams once we know the match teams.
+      if (m) {
+        const { data: plData } = await supabase
+          .from('players')
+          .select('team, name')
+          .in('team', [m.home_team, m.away_team])
+          .order('name')
+        setPlayers((plData ?? []) as { team: string; name: string }[])
+      }
 
       if (p) {
         setHomeScore(p.pred_home_score)
@@ -145,6 +156,7 @@ export function MatchDetail() {
         {state === 'open' ? (
           <PredictionForm
             match={match}
+            players={players}
             homeScore={homeScore} setHomeScore={setHomeScore}
             awayScore={awayScore} setAwayScore={setAwayScore}
             firstTeam={firstTeam} setFirstTeam={setFirstTeam}
@@ -170,6 +182,7 @@ export function MatchDetail() {
 
 interface FormProps {
   match: Match
+  players: { team: string; name: string }[]
   homeScore: number; setHomeScore: (v: number) => void
   awayScore: number; setAwayScore: (v: number) => void
   firstTeam: 'home' | 'away' | 'none'; setFirstTeam: (v: 'home' | 'away' | 'none') => void
@@ -178,7 +191,8 @@ interface FormProps {
   onSubmit: () => void
 }
 
-function PredictionForm({ match, homeScore, setHomeScore, awayScore, setAwayScore, firstTeam, setFirstTeam, playerName, setPlayerName, saving, saved, saveError, onSubmit }: FormProps) {
+function PredictionForm({ match, players, homeScore, setHomeScore, awayScore, setAwayScore, firstTeam, setFirstTeam, playerName, setPlayerName, saving, saved, saveError, onSubmit }: FormProps) {
+  const hasRoster = players.length > 0
   return (
     <form onSubmit={e => { e.preventDefault(); onSubmit() }} className="space-y-5">
       {/* Score */}
@@ -222,18 +236,38 @@ function PredictionForm({ match, homeScore, setHomeScore, awayScore, setAwayScor
 
       {/* Player pick */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-0.5">
-          Player pick <span className="normal-case font-normal text-gray-400">(last name)</span>
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Player pick</p>
         <p className="text-xs text-gray-400 mb-3">+2 if they score · +1 if they assist · max 3 pts</p>
-        <input
-          type="text"
-          required
-          value={playerName}
-          onChange={e => setPlayerName(e.target.value)}
-          placeholder="Last name only — e.g. Mbappé"
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-        />
+        {hasRoster ? (
+          <select
+            required
+            value={playerName}
+            onChange={e => setPlayerName(e.target.value)}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          >
+            <option value="">— Pick a player —</option>
+            {[match.home_team, match.away_team].map(team => {
+              const squad = players.filter(p => p.team === team)
+              if (squad.length === 0) return null
+              return (
+                <optgroup key={team} label={team}>
+                  {squad.map(p => (
+                    <option key={p.name} value={p.name}>{p.name}</option>
+                  ))}
+                </optgroup>
+              )
+            })}
+          </select>
+        ) : (
+          <input
+            type="text"
+            required
+            value={playerName}
+            onChange={e => setPlayerName(e.target.value)}
+            placeholder="Last name only — e.g. Mbappé"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          />
+        )}
       </div>
 
       {saveError && <p className="text-red-600 text-sm px-1">{saveError}</p>}

@@ -11,6 +11,7 @@ import { Leaderboard } from './pages/Leaderboard'
 import { AdminResults } from './pages/admin/AdminResults'
 import { AdminResultEditor } from './pages/admin/AdminResultEditor'
 import { AdminFixtures } from './pages/admin/AdminFixtures'
+import { AdminRoster } from './pages/admin/AdminRoster'
 import { AdminData } from './pages/admin/AdminData'
 
 function App() {
@@ -33,6 +34,7 @@ function App() {
           <Route path="/admin/results" element={<AdminRoute><AdminResults /></AdminRoute>} />
           <Route path="/admin/results/:id" element={<AdminRoute><AdminResultEditor /></AdminRoute>} />
           <Route path="/admin/fixtures" element={<AdminRoute><AdminFixtures /></AdminRoute>} />
+          <Route path="/admin/roster" element={<AdminRoute><AdminRoster /></AdminRoute>} />
           <Route path="/admin/data" element={<AdminRoute><AdminData /></AdminRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
