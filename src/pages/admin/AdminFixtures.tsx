@@ -254,14 +254,27 @@ export function AdminFixtures() {
     const finishedIds = new Set((finishedRows ?? []).map(r => r.ext_id as string))
     const toUpsert = preview.filter(m => !finishedIds.has(m.ext_id))
 
-    const { error } = await supabase
-      .from('matches').upsert(toUpsert, { onConflict: 'ext_id' })
+    // Batch into chunks of 50 to stay within Supabase request limits.
+    const CHUNK = 50
+    let importedCount = 0
+    let firstError: string | null = null
+
+    for (let i = 0; i < toUpsert.length; i += CHUNK) {
+      const chunk = toUpsert.slice(i, i + CHUNK)
+      const { error } = await supabase
+        .from('matches').upsert(chunk, { onConflict: 'ext_id' })
+      if (error) {
+        firstError = `Batch ${Math.floor(i / CHUNK) + 1}: ${error.message}`
+        break
+      }
+      importedCount += chunk.length
+    }
 
     setImporting(false)
-    if (error) {
-      setImportResult({ count: 0, error: error.message })
+    if (firstError) {
+      setImportResult({ count: importedCount, error: firstError })
     } else {
-      setImportResult({ count: toUpsert.length })
+      setImportResult({ count: importedCount })
       setPreview(null)
     }
   }
