@@ -10,6 +10,7 @@ import { MatchDetail } from './pages/MatchDetail'
 import { Leaderboard } from './pages/Leaderboard'
 import { AdminResults } from './pages/admin/AdminResults'
 import { AdminResultEditor } from './pages/admin/AdminResultEditor'
+import { AdminFixtures } from './pages/admin/AdminFixtures'
 import { AdminData } from './pages/admin/AdminData'
 
 function App() {
@@ -31,6 +32,7 @@ function App() {
           <Route path="/admin" element={<Navigate to="/admin/results" replace />} />
           <Route path="/admin/results" element={<AdminRoute><AdminResults /></AdminRoute>} />
           <Route path="/admin/results/:id" element={<AdminRoute><AdminResultEditor /></AdminRoute>} />
+          <Route path="/admin/fixtures" element={<AdminRoute><AdminFixtures /></AdminRoute>} />
           <Route path="/admin/data" element={<AdminRoute><AdminData /></AdminRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
