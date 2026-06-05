@@ -33,45 +33,102 @@ function inferGroup(roundName: string): string | null {
   return m ? m[1].toUpperCase() : null
 }
 
+// Parse a date+time string into an ISO UTC string.
+// Handles: "2026-06-11" + "17:00", "Jun/11" + "17:00", "2026-06-11T17:00:00Z"
+function parseKickoff(date: string, time?: string, year = 2026): string {
+  // Already a full ISO timestamp
+  if (date.includes('T')) return date.endsWith('Z') ? date : date + 'Z'
+
+  let isoDate = date
+  // "Jun/11" or "Jun 11" → "2026-06-11"
+  if (/^[A-Za-z]/.test(date)) {
+    const months: Record<string, string> = {
+      jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+      jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+    }
+    const m = date.match(/([A-Za-z]+)[/\s](\d+)/)
+    if (m) {
+      const mo = months[m[1].toLowerCase().slice(0, 3)] ?? '06'
+      const day = m[2].padStart(2, '0')
+      isoDate = `${year}-${mo}-${day}`
+    }
+  }
+
+  const t = (time ?? '00:00').padStart(5, '0')
+  return `${isoDate}T${t}:00Z`
+}
+
+// Resolve team name from various field shapes.
+function teamName(t: unknown): string | null {
+  if (!t) return null
+  if (typeof t === 'string') return t
+  if (typeof t === 'object') {
+    const o = t as Record<string, unknown>
+    return (o.name ?? o.team ?? o.title ?? null) as string | null
+  }
+  return null
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseFixtures(data: any): ParsedMatch[] {
+function parseFixtures(data: any, autoYear = 2026): ParsedMatch[] {
+  // Normalise: some files put rounds at top level, others nest them
   const rounds: Array<{
     name?: string
-    matches?: Array<{
-      num?: number
-      date?: string
-      time?: string
-      team1?: { name?: string }
-      team2?: { name?: string }
-      group?: string
-    }>
-  }> = Array.isArray(data?.rounds) ? data.rounds : []
+    group?: string
+    stage?: string
+    matches?: unknown[]
+    games?: unknown[]
+  }> = Array.isArray(data?.rounds)
+    ? data.rounds
+    : Array.isArray(data?.stages)
+    ? data.stages
+    : Array.isArray(data?.matchdays)
+    ? data.matchdays
+    : Array.isArray(data?.groups)
+    ? data.groups
+    : []
+
+  // Some files have a flat top-level matches/games array — wrap in one round
+  const flatMatches =
+    rounds.length === 0 && (Array.isArray(data?.matches) || Array.isArray(data?.games))
+      ? data.matches ?? data.games
+      : null
+  if (flatMatches) rounds.push({ name: 'Group stage', matches: flatMatches })
 
   const results: ParsedMatch[] = []
   let autoNum = 1
 
   for (const round of rounds) {
-    const roundName = round.name ?? ''
+    const roundName = round.name ?? round.stage ?? ''
     const stage = inferStage(roundName)
     const groupFromRound = stage === 'group' ? inferGroup(roundName) : null
+    const matchList = (round.matches ?? round.games ?? []) as unknown[]
 
-    for (const m of round.matches ?? []) {
-      if (!m.team1?.name || !m.team2?.name || !m.date) continue
+    for (const raw of matchList) {
+      const m = raw as Record<string, unknown>
 
-      const num = m.num ?? autoNum++
-      const time = (m.time ?? '00:00').padStart(5, '0')
-      const kickoffUtc = `${m.date}T${time}:00Z`
-      const groupLabel = m.group
-        ? m.group.trim().toUpperCase().replace(/^GROUP\s+/i, '')
-        : groupFromRound
+      // Team names — try several field name conventions
+      const home = teamName(m.team1 ?? m.home ?? m.home_team ?? m.homeTeam)
+      const away = teamName(m.team2 ?? m.away ?? m.away_team ?? m.awayTeam)
+      if (!home || !away) continue
+
+      const date = (m.date ?? m.kickoff ?? m.date_utc ?? '') as string
+      if (!date) continue
+
+      const time = (m.time ?? m.kickoff_time ?? m.time_utc) as string | undefined
+      const num = (m.num ?? m.id ?? m.match_id ?? autoNum++) as number
+
+      const groupLabel =
+        (m.group as string | undefined)?.trim().toUpperCase().replace(/^GROUP\s+/i, '') ??
+        groupFromRound
 
       results.push({
         ext_id: `wc2026-${num}`,
         stage,
-        group_label: stage === 'group' ? groupLabel : null,
-        home_team: m.team1.name,
-        away_team: m.team2.name,
-        kickoff_utc: kickoffUtc,
+        group_label: stage === 'group' ? groupLabel ?? null : null,
+        home_team: home,
+        away_team: away,
+        kickoff_utc: parseKickoff(date, time, autoYear),
         status: 'scheduled',
       })
     }
@@ -80,12 +137,32 @@ function parseFixtures(data: any): ParsedMatch[] {
   return results
 }
 
+// Returns a compact human-readable summary of the JSON's top-level structure
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function summariseStructure(data: any): string {
+  if (typeof data !== 'object' || data === null) return JSON.stringify(data).slice(0, 200)
+  const keys = Object.keys(data)
+  const lines: string[] = [`Top-level keys: ${keys.join(', ')}`]
+  for (const k of keys.slice(0, 4)) {
+    const v = data[k]
+    if (Array.isArray(v)) {
+      lines.push(`  ${k}: array[${v.length}]${v[0] ? ' — first item keys: ' + Object.keys(v[0]).join(', ') : ''}`)
+    } else if (typeof v === 'object' && v !== null) {
+      lines.push(`  ${k}: object — keys: ${Object.keys(v).join(', ')}`)
+    } else {
+      lines.push(`  ${k}: ${JSON.stringify(v).slice(0, 60)}`)
+    }
+  }
+  return lines.join('\n')
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AdminFixtures() {
   const [url, setUrl] = useState(OF_URL)
   const [fetching, setFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const [rawDebug, setRawDebug] = useState<string | null>(null)
   const [preview, setPreview] = useState<ParsedMatch[] | null>(null)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ count: number; error?: string } | null>(null)
@@ -93,6 +170,7 @@ export function AdminFixtures() {
   async function handleFetch() {
     setFetching(true)
     setFetchError(null)
+    setRawDebug(null)
     setPreview(null)
     setImportResult(null)
     try {
@@ -101,9 +179,9 @@ export function AdminFixtures() {
       const json = await res.json()
       const matches = parseFixtures(json)
       if (matches.length === 0) {
-        throw new Error(
-          'No matches parsed — the URL may be wrong or the format is not openfootball-compatible.'
-        )
+        // Show structure so we can diagnose the format
+        setRawDebug(summariseStructure(json))
+        throw new Error('No matches parsed — see structure below to diagnose the format')
       }
       setPreview(matches)
     } catch (err) {
@@ -115,7 +193,7 @@ export function AdminFixtures() {
   async function handleImport() {
     if (!preview) return
     setImporting(true)
-    // ignoreDuplicates: true → insert new matches, skip any that already exist (preserves finished matches)
+    // ignoreDuplicates: true → insert new, skip existing (never overwrites finished matches)
     const { error } = await supabase
       .from('matches')
       .upsert(preview, { onConflict: 'ext_id', ignoreDuplicates: true })
@@ -157,26 +235,28 @@ export function AdminFixtures() {
             {fetching ? 'Fetching…' : 'Fetch & Preview'}
           </button>
         </div>
+
         {fetchError && (
           <p className="mt-2 text-red-600 text-sm">{fetchError}</p>
         )}
+
+        {rawDebug && (
+          <pre className="mt-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 whitespace-pre-wrap font-mono">
+            {rawDebug}
+          </pre>
+        )}
+
         <p className="mt-2 text-xs text-gray-400">
-          Tip: if the default URL 404s, the 2026 data may not be published yet — check the{' '}
-          <a
-            href="https://github.com/openfootball/worldcup.json"
-            target="_blank"
-            rel="noreferrer"
-            className="text-green-700 underline"
-          >
-            openfootball/worldcup.json
-          </a>
-          {' '}repo for the correct path.
+          If the default URL 404s or fails, paste the raw JSON into the box below instead.
         </p>
       </div>
 
+      {/* Paste JSON fallback */}
+      <PasteImport onParsed={setPreview} onImportResult={setImportResult} />
+
       {/* Preview table */}
       {preview && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-4">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-4 mt-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
               Preview — {preview.length} matches
@@ -207,8 +287,7 @@ export function AdminFixtures() {
                       {m.home_team} vs {m.away_team}
                     </td>
                     <td className="py-1.5 px-2 text-gray-500">
-                      {m.stage}
-                      {m.group_label ? ` ${m.group_label}` : ''}
+                      {m.stage}{m.group_label ? ` ${m.group_label}` : ''}
                     </td>
                     <td className="py-1.5 px-2 text-gray-400 font-mono">
                       {m.kickoff_utc.replace('T', ' ').replace(':00Z', ' UTC')}
@@ -224,10 +303,8 @@ export function AdminFixtures() {
       {/* Import result */}
       {importResult && (
         <div
-          className={`rounded-xl px-4 py-3 text-sm ${
-            importResult.error
-              ? 'bg-red-50 text-red-800'
-              : 'bg-green-50 text-green-800'
+          className={`rounded-xl px-4 py-3 text-sm mt-4 ${
+            importResult.error ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800'
           }`}
         >
           {importResult.error
@@ -236,5 +313,89 @@ export function AdminFixtures() {
         </div>
       )}
     </AdminLayout>
+  )
+}
+
+// ─── Paste JSON fallback ───────────────────────────────────────────────────────
+
+function PasteImport({
+  onParsed,
+  onImportResult,
+}: {
+  onParsed: (m: ParsedMatch[]) => void
+  onImportResult: (r: { count: number; error?: string }) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+
+  function handleParse() {
+    setErr(null)
+    try {
+      const json = JSON.parse(text)
+      const matches = parseFixtures(json)
+      if (matches.length === 0) {
+        setErr(
+          'Still no matches found.\n\n' + summariseStructure(json) +
+          '\n\nPaste the structure above into the chat and Claude will update the parser.'
+        )
+        return
+      }
+      onParsed(matches)
+      setOpen(false)
+      setText('')
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Invalid JSON')
+    }
+  }
+
+  async function handleDirectImport(raw: ParsedMatch[]) {
+    const { error } = await supabase
+      .from('matches')
+      .upsert(raw, { onConflict: 'ext_id', ignoreDuplicates: true })
+    if (error) onImportResult({ count: 0, error: error.message })
+    else onImportResult({ count: raw.length })
+  }
+
+  void handleDirectImport // suppress unused warning — called via onParsed path
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="text-sm text-green-700 font-medium hover:underline"
+      >
+        {open ? '▾ Hide paste panel' : '▸ Paste JSON manually (fallback)'}
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-gray-400">
+            Paste the raw fixture JSON (from any source — openfootball, your own file, etc.)
+            and click Parse. The parser accepts the openfootball{' '}
+            <code className="bg-gray-100 px-1 rounded">rounds[]</code> format.
+          </p>
+          <textarea
+            rows={8}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder='{"rounds": [{"name": "Matchday 1 - Group A", "matches": [...]}]}'
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+          />
+          {err && (
+            <pre className="text-red-600 text-xs whitespace-pre-wrap font-mono bg-red-50 rounded-lg px-3 py-2">
+              {err}
+            </pre>
+          )}
+          <button
+            onClick={handleParse}
+            disabled={!text.trim()}
+            className="px-4 py-2 bg-green-700 hover:bg-green-800 disabled:opacity-40 text-white font-medium text-sm rounded-lg transition-colors"
+          >
+            Parse & Preview
+          </button>
+        </div>
+      )}
+    </div>
   )
 }
