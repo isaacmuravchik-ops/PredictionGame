@@ -5,6 +5,16 @@ import { AdminLayout } from './AdminLayout'
 const OF_URL =
   'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json'
 
+const TZ_OPTIONS = [
+  { label: 'EDT  UTC−4  (US Eastern, Jun–Nov)', value: -4 },
+  { label: 'EST  UTC−5  (US Eastern, Nov–Mar)', value: -5 },
+  { label: 'CDT  UTC−5  (US Central, Mar–Nov)', value: -5 },
+  { label: 'CST  UTC−6  (US Central, Nov–Mar)', value: -6 },
+  { label: 'PDT  UTC−7  (US Pacific, Mar–Nov)', value: -7 },
+  { label: 'PST  UTC−8  (US Pacific, Nov–Mar)', value: -8 },
+  { label: 'UTC  UTC+0  (already UTC)',          value:  0 },
+]
+
 interface ParsedMatch {
   ext_id: string
   stage: string
@@ -33,58 +43,49 @@ function inferGroup(roundName: string): string | null {
   return m ? m[1].toUpperCase() : null
 }
 
-// UTC offset of the times in the source JSON (0 = already UTC, -4 = EDT, -5 = EST).
-// openfootball stores times in UTC, so this should stay 0.
-const SOURCE_UTC_OFFSET = 0
-
-// Parse a date+time string into an ISO UTC string, applying SOURCE_UTC_OFFSET.
-// Returns null if the date can't be parsed (those rows are skipped).
-// Handles: "2026-06-11" + "17:00", "Jun/11" + "17:00", "2026-06-11T17:00:00Z"
-function parseKickoff(date: string, time?: string, year = 2026): string | null {
+// Converts a local date+time (in utcOffset timezone) to a UTC ISO string.
+// Returns null for unparseable input — those rows are skipped.
+function parseKickoff(date: string, time: string | undefined, year: number, utcOffset: number): string | null {
   try {
-    // Already a full ISO timestamp with explicit zone — keep as-is
     if (date.includes('T')) {
       const d = new Date(date.endsWith('Z') ? date : date + 'Z')
       return isNaN(d.getTime()) ? null : d.toISOString()
     }
 
     let isoDate = date
-    // "Jun/11" or "Jun 11" → "2026-06-11"
     if (/^[A-Za-z]/.test(date)) {
       const months: Record<string, string> = {
-        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+        jan:'01', feb:'02', mar:'03', apr:'04', may:'05', jun:'06',
+        jul:'07', aug:'08', sep:'09', oct:'10', nov:'11', dec:'12',
       }
       const m = date.match(/([A-Za-z]+)[/\s](\d+)/)
       if (m) {
         const mo = months[m[1].toLowerCase().slice(0, 3)] ?? '06'
-        const day = m[2].padStart(2, '0')
-        isoDate = `${year}-${mo}-${day}`
+        isoDate = `${year}-${mo}-${m[2].padStart(2, '0')}`
       }
     }
 
-    // Extract hour/minute — strip any AM/PM or extra text after the colon pair
     const rawTime = (time ?? '00:00').trim()
-    const timeParts = rawTime.match(/(\d{1,2}):(\d{2})/)
-    if (!timeParts) return null
-    const h = parseInt(timeParts[1], 10)
-    const min = parseInt(timeParts[2], 10)
+    const tp = rawTime.match(/(\d{1,2}):(\d{2})/)
+    if (!tp) return null
+    const h = parseInt(tp[1], 10)
+    const min = parseInt(tp[2], 10)
 
-    const dateParts = isoDate.split('-').map(Number)
-    if (dateParts.length < 3 || dateParts.some(isNaN)) return null
-    const [y, mo, d] = dateParts
+    const parts = isoDate.split('-').map(Number)
+    if (parts.length < 3 || parts.some(isNaN)) return null
+    const [y, mo, d] = parts
 
     const localMs = Date.UTC(y, mo - 1, d, h, min, 0)
     if (isNaN(localMs)) return null
 
-    const utcMs = localMs - SOURCE_UTC_OFFSET * 3_600_000
-    return new Date(utcMs).toISOString()
+    // Subtract utcOffset to convert local → UTC.
+    // e.g. local 15:00 at UTC-4: 15:00 - (-4 * 3600000) = 19:00 UTC ✓
+    return new Date(localMs - utcOffset * 3_600_000).toISOString()
   } catch {
     return null
   }
 }
 
-// Resolve team name from various field shapes.
 function teamName(t: unknown): string | null {
   if (!t) return null
   if (typeof t === 'string') return t
@@ -96,29 +97,19 @@ function teamName(t: unknown): string | null {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseFixtures(data: any, autoYear = 2026): ParsedMatch[] {
-  // Normalise: some files put rounds at top level, others nest them
+function parseFixtures(data: any, utcOffset: number, autoYear = 2026): ParsedMatch[] {
   const rounds: Array<{
-    name?: string
-    group?: string
-    stage?: string
-    matches?: unknown[]
-    games?: unknown[]
-  }> = Array.isArray(data?.rounds)
-    ? data.rounds
-    : Array.isArray(data?.stages)
-    ? data.stages
-    : Array.isArray(data?.matchdays)
-    ? data.matchdays
-    : Array.isArray(data?.groups)
-    ? data.groups
-    : []
+    name?: string; group?: string; stage?: string
+    matches?: unknown[]; games?: unknown[]
+  }> = Array.isArray(data?.rounds)   ? data.rounds
+     : Array.isArray(data?.stages)   ? data.stages
+     : Array.isArray(data?.matchdays)? data.matchdays
+     : Array.isArray(data?.groups)   ? data.groups
+     : []
 
-  // Some files have a flat top-level matches/games array — wrap in one round
   const flatMatches =
     rounds.length === 0 && (Array.isArray(data?.matches) || Array.isArray(data?.games))
-      ? data.matches ?? data.games
-      : null
+      ? (data.matches ?? data.games) : null
   if (flatMatches) rounds.push({ name: 'Group stage', matches: flatMatches })
 
   const results: ParsedMatch[] = []
@@ -132,8 +123,6 @@ function parseFixtures(data: any, autoYear = 2026): ParsedMatch[] {
 
     for (const raw of matchList) {
       const m = raw as Record<string, unknown>
-
-      // Team names — try several field name conventions
       const home = teamName(m.team1 ?? m.home ?? m.home_team ?? m.homeTeam)
       const away = teamName(m.team2 ?? m.away ?? m.away_team ?? m.awayTeam)
       if (!home || !away) continue
@@ -142,10 +131,10 @@ function parseFixtures(data: any, autoYear = 2026): ParsedMatch[] {
       if (!date) continue
 
       const time = (m.time ?? m.kickoff_time ?? m.time_utc) as string | undefined
-      const num = (m.num ?? m.id ?? m.match_id ?? autoNum++) as number
+      const num  = (m.num ?? m.id ?? m.match_id ?? autoNum++) as number
 
-      const kickoffUtc = parseKickoff(date, time, autoYear)
-      if (kickoffUtc === null) continue  // skip rows with unparseable dates
+      const kickoffUtc = parseKickoff(date, time, autoYear, utcOffset)
+      if (kickoffUtc === null) continue
 
       const groupLabel =
         (m.group as string | undefined)?.trim().toUpperCase().replace(/^GROUP\s+/i, '') ??
@@ -154,7 +143,7 @@ function parseFixtures(data: any, autoYear = 2026): ParsedMatch[] {
       results.push({
         ext_id: `wc2026-${num}`,
         stage,
-        group_label: stage === 'group' ? groupLabel ?? null : null,
+        group_label: stage === 'group' ? (groupLabel ?? null) : null,
         home_team: home,
         away_team: away,
         kickoff_utc: kickoffUtc,
@@ -166,7 +155,6 @@ function parseFixtures(data: any, autoYear = 2026): ParsedMatch[] {
   return results
 }
 
-// Returns a compact human-readable summary of the JSON's top-level structure
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function summariseStructure(data: any): string {
   if (typeof data !== 'object' || data === null) return JSON.stringify(data).slice(0, 200)
@@ -174,13 +162,12 @@ function summariseStructure(data: any): string {
   const lines: string[] = [`Top-level keys: ${keys.join(', ')}`]
   for (const k of keys.slice(0, 4)) {
     const v = data[k]
-    if (Array.isArray(v)) {
+    if (Array.isArray(v))
       lines.push(`  ${k}: array[${v.length}]${v[0] ? ' — first item keys: ' + Object.keys(v[0]).join(', ') : ''}`)
-    } else if (typeof v === 'object' && v !== null) {
+    else if (typeof v === 'object' && v !== null)
       lines.push(`  ${k}: object — keys: ${Object.keys(v).join(', ')}`)
-    } else {
+    else
       lines.push(`  ${k}: ${JSON.stringify(v).slice(0, 60)}`)
-    }
   }
   return lines.join('\n')
 }
@@ -188,12 +175,13 @@ function summariseStructure(data: any): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AdminFixtures() {
-  const [url, setUrl] = useState(OF_URL)
-  const [fetching, setFetching] = useState(false)
+  const [url, setUrl]               = useState(OF_URL)
+  const [tzOffset, setTzOffset]     = useState(-4)          // default EDT
+  const [fetching, setFetching]     = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
-  const [rawDebug, setRawDebug] = useState<string | null>(null)
-  const [preview, setPreview] = useState<ParsedMatch[] | null>(null)
-  const [importing, setImporting] = useState(false)
+  const [rawDebug, setRawDebug]     = useState<string | null>(null)
+  const [preview, setPreview]       = useState<ParsedMatch[] | null>(null)
+  const [importing, setImporting]   = useState(false)
   const [importResult, setImportResult] = useState<{ count: number; error?: string } | null>(null)
 
   async function handleFetch() {
@@ -206,9 +194,8 @@ export function AdminFixtures() {
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`)
       const json = await res.json()
-      const matches = parseFixtures(json)
+      const matches = parseFixtures(json, tzOffset)
       if (matches.length === 0) {
-        // Show structure so we can diagnose the format
         setRawDebug(summariseStructure(json))
         throw new Error('No matches parsed — see structure below to diagnose the format')
       }
@@ -223,20 +210,13 @@ export function AdminFixtures() {
     if (!preview) return
     setImporting(true)
 
-    // Fetch ext_ids of already-finished matches — never touch those
     const { data: finishedRows } = await supabase
-      .from('matches')
-      .select('ext_id')
-      .eq('status', 'finished')
+      .from('matches').select('ext_id').eq('status', 'finished')
     const finishedIds = new Set((finishedRows ?? []).map(r => r.ext_id as string))
-
-    // Everything else (new matches AND existing scheduled placeholders) gets upserted,
-    // so placeholder "Winner A vs Runner-up B" rows get overwritten with real team names.
     const toUpsert = preview.filter(m => !finishedIds.has(m.ext_id))
 
     const { error } = await supabase
-      .from('matches')
-      .upsert(toUpsert, { onConflict: 'ext_id' })
+      .from('matches').upsert(toUpsert, { onConflict: 'ext_id' })
 
     setImporting(false)
     if (error) {
@@ -251,54 +231,63 @@ export function AdminFixtures() {
     <AdminLayout>
       <h1 className="text-lg font-bold text-gray-800 mb-1">Fixture Sync</h1>
       <p className="text-sm text-gray-500 mb-5">
-        Fetch and import matches from an openfootball-format JSON source. Times are treated as
-        UTC — cross-check against the official FIFA schedule after import. Re-importing is safe:
-        scheduled placeholder matches (knockout TBD slots) are overwritten with real teams once
-        known; finished matches are always protected.
+        Fetch and import fixtures. Choose the timezone the source JSON uses, then
+        Fetch &amp; Preview. Finished matches are never overwritten; scheduled
+        placeholders are updated with real teams on re-import.
       </p>
 
-      {/* URL + fetch */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-4">
-        <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-2">
-          Source URL
-        </label>
-        <div className="flex gap-2">
-          <input
-            type="url"
-            value={url}
-            onChange={e => setUrl(e.target.value)}
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500 font-mono"
-          />
-          <button
-            onClick={handleFetch}
-            disabled={fetching || !url.trim()}
-            className="px-4 py-2 bg-green-700 hover:bg-green-800 disabled:opacity-40 text-white font-medium text-sm rounded-lg transition-colors whitespace-nowrap"
+      {/* URL + timezone + fetch */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-4 space-y-3">
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">
+            Source timezone
+          </label>
+          <select
+            value={tzOffset}
+            onChange={e => setTzOffset(Number(e.target.value))}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500"
           >
-            {fetching ? 'Fetching…' : 'Fetch & Preview'}
-          </button>
+            {TZ_OPTIONS.map(opt => (
+              <option key={`${opt.label}-${opt.value}`} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
 
-        {fetchError && (
-          <p className="mt-2 text-red-600 text-sm">{fetchError}</p>
-        )}
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">
+            Source URL
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500 font-mono"
+            />
+            <button
+              onClick={handleFetch}
+              disabled={fetching || !url.trim()}
+              className="px-4 py-2 bg-green-700 hover:bg-green-800 disabled:opacity-40 text-white font-medium text-sm rounded-lg transition-colors whitespace-nowrap"
+            >
+              {fetching ? 'Fetching…' : 'Fetch & Preview'}
+            </button>
+          </div>
+        </div>
 
+        {fetchError && <p className="text-red-600 text-sm">{fetchError}</p>}
         {rawDebug && (
-          <pre className="mt-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 whitespace-pre-wrap font-mono">
+          <pre className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 whitespace-pre-wrap font-mono">
             {rawDebug}
           </pre>
         )}
-
-        <p className="mt-2 text-xs text-gray-400">
-          If the default URL 404s or fails, paste the raw JSON into the box below instead.
-        </p>
       </div>
 
       {/* Paste JSON fallback */}
-      <PasteImport onParsed={setPreview} onImportResult={setImportResult} />
+      <PasteImport tzOffset={tzOffset} onParsed={setPreview} onImportResult={setImportResult} />
 
       {/* Preview table */}
       {preview && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-4 mt-4">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mt-4 mb-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
               Preview — {preview.length} matches
@@ -318,21 +307,17 @@ export function AdminFixtures() {
                   <th className="text-left pb-2 px-2 font-medium">#</th>
                   <th className="text-left pb-2 px-2 font-medium">Match</th>
                   <th className="text-left pb-2 px-2 font-medium">Stage</th>
-                  <th className="text-left pb-2 px-2 font-medium">Kickoff (UTC assumed)</th>
+                  <th className="text-left pb-2 px-2 font-medium">Kickoff (UTC stored)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {preview.map((m, i) => (
                   <tr key={m.ext_id}>
                     <td className="py-1.5 px-2 text-gray-400">{i + 1}</td>
-                    <td className="py-1.5 px-2 font-medium text-gray-800">
-                      {m.home_team} vs {m.away_team}
-                    </td>
-                    <td className="py-1.5 px-2 text-gray-500">
-                      {m.stage}{m.group_label ? ` ${m.group_label}` : ''}
-                    </td>
+                    <td className="py-1.5 px-2 font-medium text-gray-800">{m.home_team} vs {m.away_team}</td>
+                    <td className="py-1.5 px-2 text-gray-500">{m.stage}{m.group_label ? ` ${m.group_label}` : ''}</td>
                     <td className="py-1.5 px-2 text-gray-400 font-mono">
-                      {m.kickoff_utc.replace('T', ' ').replace(':00Z', ' UTC')}
+                      {m.kickoff_utc.replace('T', ' ').replace('.000Z', ' UTC')}
                     </td>
                   </tr>
                 ))}
@@ -342,16 +327,11 @@ export function AdminFixtures() {
         </div>
       )}
 
-      {/* Import result */}
       {importResult && (
-        <div
-          className={`rounded-xl px-4 py-3 text-sm mt-4 ${
-            importResult.error ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800'
-          }`}
-        >
+        <div className={`rounded-xl px-4 py-3 text-sm mt-4 ${importResult.error ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800'}`}>
           {importResult.error
             ? `Import failed: ${importResult.error}`
-            : `✓ ${importResult.count} matches queued for import. Check the Results tab — new matches appear immediately.`}
+            : `✓ ${importResult.count} matches imported. Check the Results tab to verify.`}
         </div>
       )}
     </AdminLayout>
@@ -361,26 +341,25 @@ export function AdminFixtures() {
 // ─── Paste JSON fallback ───────────────────────────────────────────────────────
 
 function PasteImport({
+  tzOffset,
   onParsed,
   onImportResult,
 }: {
+  tzOffset: number
   onParsed: (m: ParsedMatch[]) => void
   onImportResult: (r: { count: number; error?: string }) => void
 }) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
-  const [err, setErr] = useState<string | null>(null)
+  const [err, setErr]   = useState<string | null>(null)
 
   function handleParse() {
     setErr(null)
     try {
       const json = JSON.parse(text)
-      const matches = parseFixtures(json)
+      const matches = parseFixtures(json, tzOffset)
       if (matches.length === 0) {
-        setErr(
-          'Still no matches found.\n\n' + summariseStructure(json) +
-          '\n\nPaste the structure above into the chat and Claude will update the parser.'
-        )
+        setErr('Still no matches found.\n\n' + summariseStructure(json))
         return
       }
       onParsed(matches)
@@ -391,15 +370,7 @@ function PasteImport({
     }
   }
 
-  async function handleDirectImport(raw: ParsedMatch[]) {
-    const { error } = await supabase
-      .from('matches')
-      .upsert(raw, { onConflict: 'ext_id', ignoreDuplicates: true })
-    if (error) onImportResult({ count: 0, error: error.message })
-    else onImportResult({ count: raw.length })
-  }
-
-  void handleDirectImport // suppress unused warning — called via onParsed path
+  void onImportResult // used by parent; not called directly from here
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
@@ -413,9 +384,8 @@ function PasteImport({
       {open && (
         <div className="mt-3 space-y-3">
           <p className="text-xs text-gray-400">
-            Paste the raw fixture JSON (from any source — openfootball, your own file, etc.)
-            and click Parse. The parser accepts the openfootball{' '}
-            <code className="bg-gray-100 px-1 rounded">rounds[]</code> format.
+            Paste raw fixture JSON and click Parse &amp; Preview. The selected
+            source timezone above will be applied.
           </p>
           <textarea
             rows={8}
