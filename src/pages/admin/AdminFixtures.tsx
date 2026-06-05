@@ -193,15 +193,27 @@ export function AdminFixtures() {
   async function handleImport() {
     if (!preview) return
     setImporting(true)
-    // ignoreDuplicates: true → insert new, skip existing (never overwrites finished matches)
+
+    // Fetch ext_ids of already-finished matches — never touch those
+    const { data: finishedRows } = await supabase
+      .from('matches')
+      .select('ext_id')
+      .eq('status', 'finished')
+    const finishedIds = new Set((finishedRows ?? []).map(r => r.ext_id as string))
+
+    // Everything else (new matches AND existing scheduled placeholders) gets upserted,
+    // so placeholder "Winner A vs Runner-up B" rows get overwritten with real team names.
+    const toUpsert = preview.filter(m => !finishedIds.has(m.ext_id))
+
     const { error } = await supabase
       .from('matches')
-      .upsert(preview, { onConflict: 'ext_id', ignoreDuplicates: true })
+      .upsert(toUpsert, { onConflict: 'ext_id' })
+
     setImporting(false)
     if (error) {
       setImportResult({ count: 0, error: error.message })
     } else {
-      setImportResult({ count: preview.length })
+      setImportResult({ count: toUpsert.length })
       setPreview(null)
     }
   }
@@ -211,8 +223,9 @@ export function AdminFixtures() {
       <h1 className="text-lg font-bold text-gray-800 mb-1">Fixture Sync</h1>
       <p className="text-sm text-gray-500 mb-5">
         Fetch and import matches from an openfootball-format JSON source. Times are treated as
-        UTC — cross-check against the official FIFA schedule after import. Existing finished
-        matches are never overwritten.
+        UTC — cross-check against the official FIFA schedule after import. Re-importing is safe:
+        scheduled placeholder matches (knockout TBD slots) are overwritten with real teams once
+        known; finished matches are always protected.
       </p>
 
       {/* URL + fetch */}
