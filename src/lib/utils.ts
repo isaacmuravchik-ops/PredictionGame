@@ -6,10 +6,14 @@ export function getMatchState(kickoffUtc: string, status: string): 'open' | 'loc
   return 'open'
 }
 
+// All times are displayed in Eastern Time (ET) — the broadcast/host timezone for WC 2026.
+const ET = 'America/New_York'
+
 export function formatKickoffTime(utcString: string): string {
   return new Date(utcString).toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: ET,
   })
 }
 
@@ -18,6 +22,7 @@ export function formatDateHeading(utcString: string): string {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
+    timeZone: ET,
   })
 }
 

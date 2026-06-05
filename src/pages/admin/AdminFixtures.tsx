@@ -33,9 +33,9 @@ function inferGroup(roundName: string): string | null {
   return m ? m[1].toUpperCase() : null
 }
 
-// UTC offset of the times in the source JSON.
-// EST = UTC-5: a 14:00 EST kickoff is stored as 19:00 UTC.
-const SOURCE_UTC_OFFSET = -5
+// UTC offset of the times in the source JSON (0 = already UTC, -4 = EDT, -5 = EST).
+// openfootball stores times in UTC, so this should stay 0.
+const SOURCE_UTC_OFFSET = 0
 
 // Parse a date+time string into an ISO UTC string, applying SOURCE_UTC_OFFSET.
 // Handles: "2026-06-11" + "17:00", "Jun/11" + "17:00", "2026-06-11T17:00:00Z"
