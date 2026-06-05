@@ -33,10 +33,14 @@ function inferGroup(roundName: string): string | null {
   return m ? m[1].toUpperCase() : null
 }
 
-// Parse a date+time string into an ISO UTC string.
+// UTC offset of the times in the source JSON.
+// EST = UTC-5: a 14:00 EST kickoff is stored as 19:00 UTC.
+const SOURCE_UTC_OFFSET = -5
+
+// Parse a date+time string into an ISO UTC string, applying SOURCE_UTC_OFFSET.
 // Handles: "2026-06-11" + "17:00", "Jun/11" + "17:00", "2026-06-11T17:00:00Z"
 function parseKickoff(date: string, time?: string, year = 2026): string {
-  // Already a full ISO timestamp
+  // Already a full ISO timestamp with explicit zone — keep as-is
   if (date.includes('T')) return date.endsWith('Z') ? date : date + 'Z'
 
   let isoDate = date
@@ -55,7 +59,12 @@ function parseKickoff(date: string, time?: string, year = 2026): string {
   }
 
   const t = (time ?? '00:00').padStart(5, '0')
-  return `${isoDate}T${t}:00Z`
+  const [h, min] = t.split(':').map(Number)
+  const [y, mo, d] = isoDate.split('-').map(Number)
+  // Construct the local time as a UTC epoch value, then subtract the offset to get true UTC.
+  const localMs = Date.UTC(y, mo - 1, d, h, min, 0)
+  const utcMs = localMs - SOURCE_UTC_OFFSET * 3_600_000
+  return new Date(utcMs).toISOString().replace('.000Z', 'Z')
 }
 
 // Resolve team name from various field shapes.
