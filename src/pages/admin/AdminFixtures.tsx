@@ -5,16 +5,6 @@ import { AdminLayout } from './AdminLayout'
 const OF_URL =
   'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json'
 
-const TZ_OPTIONS = [
-  { label: 'EDT  UTC−4  (US Eastern, Jun–Nov)', value: -4 },
-  { label: 'EST  UTC−5  (US Eastern, Nov–Mar)', value: -5 },
-  { label: 'CDT  UTC−5  (US Central, Mar–Nov)', value: -5 },
-  { label: 'CST  UTC−6  (US Central, Nov–Mar)', value: -6 },
-  { label: 'PDT  UTC−7  (US Pacific, Mar–Nov)', value: -7 },
-  { label: 'PST  UTC−8  (US Pacific, Nov–Mar)', value: -8 },
-  { label: 'UTC  UTC+0  (already UTC)',          value:  0 },
-]
-
 interface ParsedMatch {
   ext_id: string
   stage: string
@@ -38,20 +28,37 @@ function inferStage(roundName: string): string {
   return 'group'
 }
 
-function inferGroup(roundName: string): string | null {
-  const m = roundName.match(/\bGroup\s+([A-L])\b/i)
-  return m ? m[1].toUpperCase() : null
-}
-
-// Converts a local date+time (in utcOffset timezone) to a UTC ISO string.
-// Returns null for unparseable input — those rows are skipped.
-function parseKickoff(date: string, time: string | undefined, year: number, utcOffset: number): string | null {
+/**
+ * Converts a local date + time string (with embedded UTC offset) to a UTC ISO string.
+ *
+ * openfootball times look like "13:00 UTC-6" or "15:00 UTC-4".
+ * We extract the per-match offset from the string so each venue's timezone is handled
+ * independently. If no offset is present in the string, we assume UTC.
+ */
+function parseKickoff(date: string, time: string | undefined, year: number): string | null {
   try {
+    // Already an ISO string — store as-is (treat as UTC).
     if (date.includes('T')) {
       const d = new Date(date.endsWith('Z') ? date : date + 'Z')
       return isNaN(d.getTime()) ? null : d.toISOString()
     }
 
+    // Extract UTC offset from the time string, e.g. "13:00 UTC-6" → offset = -6.
+    // If absent, fall back to UTC (offset = 0).
+    let rawTime = (time ?? '00:00').trim()
+    let utcOffset = 0
+    const offsetMatch = rawTime.match(/^(\d{1,2}:\d{2})\s+UTC([+-]\d+)$/i)
+    if (offsetMatch) {
+      rawTime    = offsetMatch[1]
+      utcOffset  = parseInt(offsetMatch[2], 10)
+    }
+
+    const tp = rawTime.match(/(\d{1,2}):(\d{2})/)
+    if (!tp) return null
+    const h   = parseInt(tp[1], 10)
+    const min = parseInt(tp[2], 10)
+
+    // Handle "Jun/11" style dates as well as "YYYY-MM-DD".
     let isoDate = date
     if (/^[A-Za-z]/.test(date)) {
       const months: Record<string, string> = {
@@ -65,21 +72,14 @@ function parseKickoff(date: string, time: string | undefined, year: number, utcO
       }
     }
 
-    const rawTime = (time ?? '00:00').trim()
-    const tp = rawTime.match(/(\d{1,2}):(\d{2})/)
-    if (!tp) return null
-    const h = parseInt(tp[1], 10)
-    const min = parseInt(tp[2], 10)
-
     const parts = isoDate.split('-').map(Number)
     if (parts.length < 3 || parts.some(isNaN)) return null
     const [y, mo, d] = parts
 
+    // Convert local → UTC: subtract utcOffset.
+    // e.g. "13:00 UTC-6": localMs = 13:00, utcMs = 13:00 - (-6 × 3600s) = 19:00 UTC ✓
     const localMs = Date.UTC(y, mo - 1, d, h, min, 0)
     if (isNaN(localMs)) return null
-
-    // Subtract utcOffset to convert local → UTC.
-    // e.g. local 15:00 at UTC-4: 15:00 - (-4 * 3600000) = 19:00 UTC ✓
     return new Date(localMs - utcOffset * 3_600_000).toISOString()
   } catch {
     return null
@@ -97,48 +97,88 @@ function teamName(t: unknown): string | null {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseFixtures(data: any, utcOffset: number, autoYear = 2026): ParsedMatch[] {
-  const rounds: Array<{
-    name?: string; group?: string; stage?: string
-    matches?: unknown[]; games?: unknown[]
-  }> = Array.isArray(data?.rounds)   ? data.rounds
-     : Array.isArray(data?.stages)   ? data.stages
-     : Array.isArray(data?.matchdays)? data.matchdays
-     : Array.isArray(data?.groups)   ? data.groups
-     : []
-
-  const flatMatches =
-    rounds.length === 0 && (Array.isArray(data?.matches) || Array.isArray(data?.games))
-      ? (data.matches ?? data.games) : null
-  if (flatMatches) rounds.push({ name: 'Group stage', matches: flatMatches })
-
+function parseFixtures(data: any, autoYear = 2026): ParsedMatch[] {
   const results: ParsedMatch[] = []
   let autoNum = 1
 
-  for (const round of rounds) {
-    const roundName = round.name ?? round.stage ?? ''
-    const stage = inferStage(roundName)
-    const groupFromRound = stage === 'group' ? inferGroup(roundName) : null
-    const matchList = (round.matches ?? round.games ?? []) as unknown[]
+  // openfootball/worldcup.json uses a flat `matches[]` array where each match
+  // carries its own `round` (stage name) and `group` fields.
+  const flatMatches: unknown[] =
+      Array.isArray(data?.matches) ? data.matches
+    : Array.isArray(data?.games)   ? data.games
+    : []
 
-    for (const raw of matchList) {
-      const m = raw as Record<string, unknown>
+  if (flatMatches.length > 0) {
+    for (const raw of flatMatches) {
+      const m    = raw as Record<string, unknown>
       const home = teamName(m.team1 ?? m.home ?? m.home_team ?? m.homeTeam)
       const away = teamName(m.team2 ?? m.away ?? m.away_team ?? m.awayTeam)
       if (!home || !away) continue
 
-      const date = (m.date ?? m.kickoff ?? m.date_utc ?? '') as string
+      const date = (m.date ?? m.kickoff ?? '') as string
       if (!date) continue
 
-      const time = (m.time ?? m.kickoff_time ?? m.time_utc) as string | undefined
+      const time = (m.time ?? m.kickoff_time) as string | undefined
       const num  = (m.num ?? m.id ?? m.match_id ?? autoNum++) as number
 
-      const kickoffUtc = parseKickoff(date, time, autoYear, utcOffset)
+      const kickoffUtc = parseKickoff(date, time, autoYear)
+      if (kickoffUtc === null) continue
+
+      const roundName  = (m.round ?? m.stage ?? '') as string
+      const stage      = inferStage(roundName)
+      const groupLabel = stage === 'group'
+        ? ((m.group as string | undefined)?.replace(/^Group\s+/i, '').trim() ?? null)
+        : null
+
+      results.push({
+        ext_id: `wc2026-${num}`,
+        stage,
+        group_label: groupLabel,
+        home_team: home,
+        away_team: away,
+        kickoff_utc: kickoffUtc,
+        status: 'scheduled',
+      })
+    }
+    return results
+  }
+
+  // Fallback: rounds-based structure (data.rounds / data.stages / data.matchdays / data.groups).
+  const rounds: Array<{
+    name?: string; group?: string; stage?: string
+    matches?: unknown[]; games?: unknown[]
+  }> =
+      Array.isArray(data?.rounds)     ? data.rounds
+    : Array.isArray(data?.stages)     ? data.stages
+    : Array.isArray(data?.matchdays)  ? data.matchdays
+    : Array.isArray(data?.groups)     ? data.groups
+    : []
+
+  for (const round of rounds) {
+    const roundName      = round.name ?? round.stage ?? ''
+    const stage          = inferStage(roundName)
+    const groupFromRound = stage === 'group'
+      ? (roundName.match(/\bGroup\s+([A-L])\b/i)?.[1]?.toUpperCase() ?? null)
+      : null
+    const matchList = (round.matches ?? round.games ?? []) as unknown[]
+
+    for (const raw of matchList) {
+      const m    = raw as Record<string, unknown>
+      const home = teamName(m.team1 ?? m.home ?? m.home_team ?? m.homeTeam)
+      const away = teamName(m.team2 ?? m.away ?? m.away_team ?? m.awayTeam)
+      if (!home || !away) continue
+
+      const date = (m.date ?? m.kickoff ?? '') as string
+      if (!date) continue
+
+      const time = (m.time ?? m.kickoff_time) as string | undefined
+      const num  = (m.num ?? m.id ?? m.match_id ?? autoNum++) as number
+
+      const kickoffUtc = parseKickoff(date, time, autoYear)
       if (kickoffUtc === null) continue
 
       const groupLabel =
-        (m.group as string | undefined)?.trim().toUpperCase().replace(/^GROUP\s+/i, '') ??
-        groupFromRound
+        (m.group as string | undefined)?.replace(/^Group\s+/i, '').trim() ?? groupFromRound
 
       results.push({
         ext_id: `wc2026-${num}`,
@@ -176,7 +216,6 @@ function summariseStructure(data: any): string {
 
 export function AdminFixtures() {
   const [url, setUrl]               = useState(OF_URL)
-  const [tzOffset, setTzOffset]     = useState(-4)          // default EDT
   const [fetching, setFetching]     = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
   const [rawDebug, setRawDebug]     = useState<string | null>(null)
@@ -194,7 +233,7 @@ export function AdminFixtures() {
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status} — ${res.statusText}`)
       const json = await res.json()
-      const matches = parseFixtures(json, tzOffset)
+      const matches = parseFixtures(json)
       if (matches.length === 0) {
         setRawDebug(summariseStructure(json))
         throw new Error('No matches parsed — see structure below to diagnose the format')
@@ -231,61 +270,41 @@ export function AdminFixtures() {
     <AdminLayout>
       <h1 className="text-lg font-bold text-gray-800 mb-1">Fixture Sync</h1>
       <p className="text-sm text-gray-500 mb-5">
-        Fetch and import fixtures. Choose the timezone the source JSON uses, then
-        Fetch &amp; Preview. Finished matches are never overwritten; scheduled
-        placeholders are updated with real teams on re-import.
+        Fetch and import fixtures from openfootball. Each match's UTC offset is read
+        directly from the JSON (e.g. "13:00 UTC-6"), so times are stored correctly
+        regardless of venue timezone. All times display in Eastern Time on the site.
       </p>
 
-      {/* URL + timezone + fetch */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-4 space-y-3">
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">
-            Source timezone
-          </label>
-          <select
-            value={tzOffset}
-            onChange={e => setTzOffset(Number(e.target.value))}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500"
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mb-4">
+        <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">
+          Source URL
+        </label>
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500 font-mono"
+          />
+          <button
+            onClick={handleFetch}
+            disabled={fetching || !url.trim()}
+            className="px-4 py-2 bg-green-700 hover:bg-green-800 disabled:opacity-40 text-white font-medium text-sm rounded-lg transition-colors whitespace-nowrap"
           >
-            {TZ_OPTIONS.map(opt => (
-              <option key={`${opt.label}-${opt.value}`} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
+            {fetching ? 'Fetching…' : 'Fetch & Preview'}
+          </button>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">
-            Source URL
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="url"
-              value={url}
-              onChange={e => setUrl(e.target.value)}
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500 font-mono"
-            />
-            <button
-              onClick={handleFetch}
-              disabled={fetching || !url.trim()}
-              className="px-4 py-2 bg-green-700 hover:bg-green-800 disabled:opacity-40 text-white font-medium text-sm rounded-lg transition-colors whitespace-nowrap"
-            >
-              {fetching ? 'Fetching…' : 'Fetch & Preview'}
-            </button>
-          </div>
-        </div>
-
-        {fetchError && <p className="text-red-600 text-sm">{fetchError}</p>}
+        {fetchError && <p className="text-red-600 text-sm mt-2">{fetchError}</p>}
         {rawDebug && (
-          <pre className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 whitespace-pre-wrap font-mono">
+          <pre className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mt-2 text-xs text-gray-600 whitespace-pre-wrap font-mono">
             {rawDebug}
           </pre>
         )}
       </div>
 
-      {/* Paste JSON fallback */}
-      <PasteImport tzOffset={tzOffset} onParsed={setPreview} onImportResult={setImportResult} />
+      <PasteImport onParsed={setPreview} onImportResult={setImportResult} />
 
-      {/* Preview table */}
       {preview && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4 mt-4 mb-4">
           <div className="flex items-center justify-between mb-3">
@@ -341,11 +360,9 @@ export function AdminFixtures() {
 // ─── Paste JSON fallback ───────────────────────────────────────────────────────
 
 function PasteImport({
-  tzOffset,
   onParsed,
   onImportResult,
 }: {
-  tzOffset: number
   onParsed: (m: ParsedMatch[]) => void
   onImportResult: (r: { count: number; error?: string }) => void
 }) {
@@ -353,11 +370,13 @@ function PasteImport({
   const [text, setText] = useState('')
   const [err, setErr]   = useState<string | null>(null)
 
+  void onImportResult
+
   function handleParse() {
     setErr(null)
     try {
       const json = JSON.parse(text)
-      const matches = parseFixtures(json, tzOffset)
+      const matches = parseFixtures(json)
       if (matches.length === 0) {
         setErr('Still no matches found.\n\n' + summariseStructure(json))
         return
@@ -369,8 +388,6 @@ function PasteImport({
       setErr(e instanceof Error ? e.message : 'Invalid JSON')
     }
   }
-
-  void onImportResult // used by parent; not called directly from here
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
@@ -384,14 +401,14 @@ function PasteImport({
       {open && (
         <div className="mt-3 space-y-3">
           <p className="text-xs text-gray-400">
-            Paste raw fixture JSON and click Parse &amp; Preview. The selected
-            source timezone above will be applied.
+            Paste raw fixture JSON. UTC offsets embedded in time strings (e.g. "13:00 UTC-6")
+            are parsed per-match automatically.
           </p>
           <textarea
             rows={8}
             value={text}
             onChange={e => setText(e.target.value)}
-            placeholder='{"rounds": [{"name": "Matchday 1 - Group A", "matches": [...]}]}'
+            placeholder='{"matches": [{"round": "Matchday 1", "date": "2026-06-11", "time": "13:00 UTC-6", ...}]}'
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500"
           />
           {err && (
