@@ -38,33 +38,50 @@ function inferGroup(roundName: string): string | null {
 const SOURCE_UTC_OFFSET = 0
 
 // Parse a date+time string into an ISO UTC string, applying SOURCE_UTC_OFFSET.
+// Returns null if the date can't be parsed (those rows are skipped).
 // Handles: "2026-06-11" + "17:00", "Jun/11" + "17:00", "2026-06-11T17:00:00Z"
-function parseKickoff(date: string, time?: string, year = 2026): string {
-  // Already a full ISO timestamp with explicit zone — keep as-is
-  if (date.includes('T')) return date.endsWith('Z') ? date : date + 'Z'
+function parseKickoff(date: string, time?: string, year = 2026): string | null {
+  try {
+    // Already a full ISO timestamp with explicit zone — keep as-is
+    if (date.includes('T')) {
+      const d = new Date(date.endsWith('Z') ? date : date + 'Z')
+      return isNaN(d.getTime()) ? null : d.toISOString()
+    }
 
-  let isoDate = date
-  // "Jun/11" or "Jun 11" → "2026-06-11"
-  if (/^[A-Za-z]/.test(date)) {
-    const months: Record<string, string> = {
-      jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-      jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+    let isoDate = date
+    // "Jun/11" or "Jun 11" → "2026-06-11"
+    if (/^[A-Za-z]/.test(date)) {
+      const months: Record<string, string> = {
+        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+      }
+      const m = date.match(/([A-Za-z]+)[/\s](\d+)/)
+      if (m) {
+        const mo = months[m[1].toLowerCase().slice(0, 3)] ?? '06'
+        const day = m[2].padStart(2, '0')
+        isoDate = `${year}-${mo}-${day}`
+      }
     }
-    const m = date.match(/([A-Za-z]+)[/\s](\d+)/)
-    if (m) {
-      const mo = months[m[1].toLowerCase().slice(0, 3)] ?? '06'
-      const day = m[2].padStart(2, '0')
-      isoDate = `${year}-${mo}-${day}`
-    }
+
+    // Extract hour/minute — strip any AM/PM or extra text after the colon pair
+    const rawTime = (time ?? '00:00').trim()
+    const timeParts = rawTime.match(/(\d{1,2}):(\d{2})/)
+    if (!timeParts) return null
+    const h = parseInt(timeParts[1], 10)
+    const min = parseInt(timeParts[2], 10)
+
+    const dateParts = isoDate.split('-').map(Number)
+    if (dateParts.length < 3 || dateParts.some(isNaN)) return null
+    const [y, mo, d] = dateParts
+
+    const localMs = Date.UTC(y, mo - 1, d, h, min, 0)
+    if (isNaN(localMs)) return null
+
+    const utcMs = localMs - SOURCE_UTC_OFFSET * 3_600_000
+    return new Date(utcMs).toISOString()
+  } catch {
+    return null
   }
-
-  const t = (time ?? '00:00').padStart(5, '0')
-  const [h, min] = t.split(':').map(Number)
-  const [y, mo, d] = isoDate.split('-').map(Number)
-  // Construct the local time as a UTC epoch value, then subtract the offset to get true UTC.
-  const localMs = Date.UTC(y, mo - 1, d, h, min, 0)
-  const utcMs = localMs - SOURCE_UTC_OFFSET * 3_600_000
-  return new Date(utcMs).toISOString().replace('.000Z', 'Z')
 }
 
 // Resolve team name from various field shapes.
@@ -127,6 +144,9 @@ function parseFixtures(data: any, autoYear = 2026): ParsedMatch[] {
       const time = (m.time ?? m.kickoff_time ?? m.time_utc) as string | undefined
       const num = (m.num ?? m.id ?? m.match_id ?? autoNum++) as number
 
+      const kickoffUtc = parseKickoff(date, time, autoYear)
+      if (kickoffUtc === null) continue  // skip rows with unparseable dates
+
       const groupLabel =
         (m.group as string | undefined)?.trim().toUpperCase().replace(/^GROUP\s+/i, '') ??
         groupFromRound
@@ -137,7 +157,7 @@ function parseFixtures(data: any, autoYear = 2026): ParsedMatch[] {
         group_label: stage === 'group' ? groupLabel ?? null : null,
         home_team: home,
         away_team: away,
-        kickoff_utc: parseKickoff(date, time, autoYear),
+        kickoff_utc: kickoffUtc,
         status: 'scheduled',
       })
     }

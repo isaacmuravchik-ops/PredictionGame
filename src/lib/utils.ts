@@ -6,24 +6,32 @@ export function getMatchState(kickoffUtc: string, status: string): 'open' | 'loc
   return 'open'
 }
 
-// All times are displayed in Eastern Time (ET) — the broadcast/host timezone for WC 2026.
+// All times displayed in Eastern Time — the broadcast/host timezone for WC 2026.
 const ET = 'America/New_York'
 
+function safeDate(utcString: string): Date | null {
+  const d = new Date(utcString)
+  return isNaN(d.getTime()) ? null : d
+}
+
 export function formatKickoffTime(utcString: string): string {
-  return new Date(utcString).toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: ET,
-  })
+  const d = safeDate(utcString)
+  if (!d) return '—'
+  try {
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', timeZone: ET })
+  } catch {
+    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  }
 }
 
 export function formatDateHeading(utcString: string): string {
-  return new Date(utcString).toLocaleDateString(undefined, {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: ET,
-  })
+  const d = safeDate(utcString)
+  if (!d) return 'Unknown date'
+  try {
+    return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', timeZone: ET })
+  } catch {
+    return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+  }
 }
 
 export function groupMatchesByDate(matches: Match[]): [string, Match[]][] {
