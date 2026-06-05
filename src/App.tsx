@@ -4,7 +4,9 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { SignIn } from './pages/SignIn'
 import { Onboarding } from './pages/Onboarding'
 import { AuthCallback } from './pages/AuthCallback'
-import { Home } from './pages/Home'
+import { Matches } from './pages/Matches'
+import { MatchDetail } from './pages/MatchDetail'
+import { Leaderboard } from './pages/Leaderboard'
 
 function App() {
   return (
@@ -16,12 +18,17 @@ function App() {
           <Route path="/onboarding" element={<Onboarding />} />
           <Route
             path="/"
-            element={
-              <ProtectedRoute>
-                <Home />
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><Matches /></ProtectedRoute>}
           />
+          <Route
+            path="/matches/:id"
+            element={<ProtectedRoute><MatchDetail /></ProtectedRoute>}
+          />
+          <Route
+            path="/leaderboard"
+            element={<ProtectedRoute><Leaderboard /></ProtectedRoute>}
+          />
+          {/* Admin routes added in Phase 3 */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
