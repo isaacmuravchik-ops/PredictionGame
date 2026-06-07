@@ -59,6 +59,36 @@ export function AdminResultEditor() {
     setList(list.filter((_, i) => i !== idx))
   }
 
+  async function handleReset() {
+    if (!match) return
+    if (!confirm(`Reset ${match.home_team} vs ${match.away_team} back to scheduled? This clears the result and all match events.`)) return
+    setSaving(true)
+    setSaveMsg(null)
+    const matchId = match.id
+
+    const { error: delErr } = await supabase.from('match_events').delete().eq('match_id', matchId)
+    if (delErr) { setSaving(false); setSaveMsg({ ok: false, text: delErr.message }); return }
+
+    const { error: mErr } = await supabase.from('matches').update({
+      status: 'scheduled',
+      home_score: null,
+      away_score: null,
+      first_scorer_team: null,
+    }).eq('id', matchId)
+    if (mErr) { setSaving(false); setSaveMsg({ ok: false, text: mErr.message }); return }
+
+    const { data: fresh } = await supabase.from('matches').select('*').eq('id', matchId).single()
+    const m = fresh as Match
+    setMatch(m)
+    setHomeScore(0)
+    setAwayScore(0)
+    setFirstScorerTeam('home')
+    setGoalscorers([])
+    setAssists([])
+    setSaving(false)
+    setSaveMsg({ ok: true, text: 'Match reset to scheduled. Predictions are editable again (if before kickoff).' })
+  }
+
   async function handleSave() {
     if (!match || !session) return
     setSaving(true)
@@ -211,6 +241,17 @@ export function AdminResultEditor() {
         >
           {saving ? 'Saving & grading…' : isFinished ? 'Re-save & re-grade' : 'Save result & grade'}
         </button>
+
+        {isFinished && (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => void handleReset()}
+            className="w-full bg-white hover:bg-red-50 disabled:opacity-40 border border-red-300 text-red-600 font-medium rounded-xl px-4 py-3 transition-colors text-sm"
+          >
+            Reset to scheduled (undo result)
+          </button>
+        )}
       </form>
     </AdminLayout>
   )
