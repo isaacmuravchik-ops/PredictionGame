@@ -69,6 +69,13 @@ export function AdminResultEditor() {
     const { error: delErr } = await supabase.from('match_events').delete().eq('match_id', matchId)
     if (delErr) { setSaving(false); setSaveMsg({ ok: false, text: delErr.message }); return }
 
+    // Zero out points on all predictions for this match so leaderboard resets.
+    const { error: predErr } = await supabase
+      .from('predictions')
+      .update({ points: 0, base_points: 0 })
+      .eq('match_id', matchId)
+    if (predErr) { setSaving(false); setSaveMsg({ ok: false, text: predErr.message }); return }
+
     const { error: mErr } = await supabase.from('matches').update({
       status: 'scheduled',
       home_score: null,
