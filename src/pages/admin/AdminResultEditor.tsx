@@ -1,4 +1,4 @@
-import { useEffect, useState, KeyboardEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabaseClient'
 import { useAuth } from '../../contexts/AuthContext'
@@ -24,6 +24,7 @@ export function AdminResultEditor() {
   const [assists, setAssists] = useState<string[]>([])
   const [newGoalscorer, setNewGoalscorer] = useState('')
   const [newAssist, setNewAssist] = useState('')
+  const [players, setPlayers] = useState<{ team: string; name: string }[]>([])
 
   useEffect(() => {
     async function load() {
@@ -38,6 +39,10 @@ export function AdminResultEditor() {
         setHomeScore(m.home_score ?? 0)
         setAwayScore(m.away_score ?? 0)
         setFirstScorerTeam(m.first_scorer_team ?? 'home')
+        const { data: plData } = await supabase
+          .from('players').select('team, name')
+          .in('team', [m.home_team, m.away_team]).order('name')
+        setPlayers((plData ?? []) as { team: string; name: string }[])
       }
       const evs = (evData ?? []) as MatchEvent[]
       setGoalscorers(evs.filter(e => e.event_type === 'goal').map(e => e.player_name))
@@ -217,6 +222,7 @@ export function AdminResultEditor() {
         <PlayerList
           title="Goalscorers"
           subtitle="Players who scored (own goals: leave blank)"
+          players={players}
           items={goalscorers}
           onRemove={i => removeFromList(goalscorers, setGoalscorers, i)}
           inputValue={newGoalscorer}
@@ -228,6 +234,7 @@ export function AdminResultEditor() {
         <PlayerList
           title="Assists"
           subtitle="Players who recorded an assist"
+          players={players}
           items={assists}
           onRemove={i => removeFromList(assists, setAssists, i)}
           inputValue={newAssist}
@@ -269,6 +276,7 @@ export function AdminResultEditor() {
 interface PlayerListProps {
   title: string
   subtitle: string
+  players: { team: string; name: string }[]
   items: string[]
   onRemove: (i: number) => void
   inputValue: string
@@ -276,10 +284,9 @@ interface PlayerListProps {
   onAdd: () => void
 }
 
-function PlayerList({ title, subtitle, items, onRemove, inputValue, onInputChange, onAdd }: PlayerListProps) {
-  function handleKey(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') { e.preventDefault(); onAdd() }
-  }
+function PlayerList({ title, subtitle, players, items, onRemove, inputValue, onInputChange, onAdd }: PlayerListProps) {
+  const hasRoster = players.length > 0
+  const teams = [...new Set(players.map(p => p.team))]
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
@@ -298,14 +305,31 @@ function PlayerList({ title, subtitle, items, onRemove, inputValue, onInputChang
       )}
 
       <div className="flex gap-2">
-        <input
-          type="text"
-          value={inputValue}
-          onChange={e => onInputChange(e.target.value)}
-          onKeyDown={handleKey}
-          placeholder="Player name"
-          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
-        />
+        {hasRoster ? (
+          <select
+            value={inputValue}
+            onChange={e => onInputChange(e.target.value)}
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            <option value="">— Select player —</option>
+            {teams.map(team => (
+              <optgroup key={team} label={team}>
+                {players.filter(p => p.team === team).map(p => (
+                  <option key={p.name} value={p.name}>{p.name}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={inputValue}
+            onChange={e => onInputChange(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAdd() } }}
+            placeholder="Player name"
+            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+          />
+        )}
         <button
           type="button"
           onClick={onAdd}
