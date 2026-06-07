@@ -81,9 +81,12 @@ function MatchRow({ match, prediction }: { match: Match; prediction?: Prediction
   const state = getMatchState(match.kickoff_utc, match.status)
   const isFinished = state === 'finished'
 
+  const msLeft = new Date(match.kickoff_utc).getTime() - Date.now()
+  const isUrgent = state === 'open' && msLeft > 0 && msLeft < 2 * 60 * 60 * 1000
+
   const badge = {
-    open:     { label: 'Open',     cls: 'bg-green-100 text-green-800' },
-    locked:   { label: 'Locked',   cls: 'bg-amber-100 text-amber-800' },
+    open:     { label: 'Open',      cls: isUrgent ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800' },
+    locked:   { label: 'Locked',    cls: 'bg-amber-100 text-amber-800' },
     finished: { label: 'Full time', cls: 'bg-gray-100 text-gray-500'  },
   }[state]
 
@@ -133,8 +136,9 @@ function MatchRow({ match, prediction }: { match: Match; prediction?: Prediction
               {flagEmoji(match.home_team)} {match.home_team} <span className="text-gray-400 font-normal">vs</span> {flagEmoji(match.away_team)} {match.away_team}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
-              {formatKickoffTime(match.kickoff_utc)} · {stageLabel(match.stage, match.group_label)}
+              {formatKickoffTime(match.kickoff_utc)} ET · {stageLabel(match.stage, match.group_label)}
             </p>
+            {state === 'open' && <Countdown kickoffUtc={match.kickoff_utc} />}
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badge.cls}`}>
@@ -155,5 +159,36 @@ function MatchRow({ match, prediction }: { match: Match; prediction?: Prediction
         </div>
       )}
     </Link>
+  )
+}
+
+function Countdown({ kickoffUtc }: { kickoffUtc: string }) {
+  const [now, setNow] = useState(Date.now)
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const msLeft = new Date(kickoffUtc).getTime() - now
+  if (msLeft <= 0) return null
+
+  const totalSec = Math.floor(msLeft / 1000)
+  const days    = Math.floor(totalSec / 86400)
+  const hours   = Math.floor((totalSec % 86400) / 3600)
+  const minutes = Math.floor((totalSec % 3600) / 60)
+  const seconds = totalSec % 60
+
+  const urgent = msLeft < 2 * 60 * 60 * 1000
+
+  let label: string
+  if (days > 0)        label = `${days}d ${hours}h`
+  else if (hours > 0)  label = `${hours}h ${minutes}m`
+  else                 label = `${minutes}m ${seconds.toString().padStart(2, '0')}s`
+
+  return (
+    <p className={`text-xs font-medium mt-0.5 ${urgent ? 'text-amber-600' : 'text-gray-400'}`}>
+      {urgent && '⚠ '}{label} left
+    </p>
   )
 }
