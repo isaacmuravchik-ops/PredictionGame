@@ -10,6 +10,7 @@ import {
   groupMatchesByDate,
   stageLabel,
   firstTeamLabel,
+  flagEmoji,
 } from '../lib/utils'
 
 export function Matches() {
@@ -103,7 +104,7 @@ function MatchRow({ match, prediction }: { match: Match; prediction?: Prediction
           {/* Teams + meta */}
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-gray-800 text-sm leading-snug">
-              {match.home_team} <span className="text-gray-400 font-normal">vs</span> {match.away_team}
+              {flagEmoji(match.home_team)} {match.home_team} <span className="text-gray-400 font-normal">vs</span> {flagEmoji(match.away_team)} {match.away_team}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
               {stageLabel(match.stage, match.group_label)}
@@ -129,7 +130,7 @@ function MatchRow({ match, prediction }: { match: Match; prediction?: Prediction
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-gray-800 text-sm leading-snug">
-              {match.home_team} <span className="text-gray-400 font-normal">vs</span> {match.away_team}
+              {flagEmoji(match.home_team)} {match.home_team} <span className="text-gray-400 font-normal">vs</span> {flagEmoji(match.away_team)} {match.away_team}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
               {formatKickoffTime(match.kickoff_utc)} · {stageLabel(match.stage, match.group_label)}

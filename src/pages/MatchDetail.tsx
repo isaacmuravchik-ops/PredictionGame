@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { Header } from '../components/Header'
 import type { Match, Prediction, MatchEvent } from '../types/database'
-import { getMatchState, formatKickoffTime, stageLabel, firstTeamLabel } from '../lib/utils'
+import { getMatchState, formatKickoffTime, stageLabel, firstTeamLabel, flagEmoji } from '../lib/utils'
 
 type PredictionWithTeam = Prediction & { profiles: { team_name: string } }
 
@@ -137,7 +137,7 @@ export function MatchDetail() {
             {stageLabel(match.stage, match.group_label)}
           </p>
           <div className="flex items-center justify-between gap-3">
-            <span className="font-bold text-lg leading-tight flex-1">{match.home_team}</span>
+            <span className="font-bold text-lg leading-tight flex-1">{flagEmoji(match.home_team)} {match.home_team}</span>
             {state === 'finished' && match.home_score != null ? (
               <span className="text-3xl font-black text-white shrink-0 tabular-nums">
                 {match.home_score} – {match.away_score}
@@ -145,7 +145,7 @@ export function MatchDetail() {
             ) : (
               <span className="text-green-400 text-sm font-medium shrink-0">vs</span>
             )}
-            <span className="font-bold text-lg leading-tight text-right flex-1">{match.away_team}</span>
+            <span className="font-bold text-lg leading-tight text-right flex-1">{flagEmoji(match.away_team)} {match.away_team}</span>
           </div>
           <p className="text-green-300 text-xs mt-2">
             {formatKickoffTime(match.kickoff_utc)} local ·{' '}
