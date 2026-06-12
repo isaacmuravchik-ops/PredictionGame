@@ -67,7 +67,7 @@ export function Leaderboard() {
                         <span className="text-xs text-gray-400 ml-1">pts</span>
                       </td>
                       <td className="py-3 px-4 text-right text-gray-400 hidden sm:table-cell text-xs">
-                        {Number(row.scoring_matches)} scored
+                        {Number(row.played_matches)} played
                       </td>
                     </tr>
                   )

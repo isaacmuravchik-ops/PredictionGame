@@ -45,5 +45,5 @@ export interface LeaderboardRow {
   user_id: string
   team_name: string
   total_points: number
-  scoring_matches: number
+  played_matches: number
 }
