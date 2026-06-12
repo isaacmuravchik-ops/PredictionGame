@@ -13,6 +13,7 @@ import { AdminResultEditor } from './pages/admin/AdminResultEditor'
 import { AdminFixtures } from './pages/admin/AdminFixtures'
 import { AdminRoster } from './pages/admin/AdminRoster'
 import { AdminData } from './pages/admin/AdminData'
+import { AdminUsers } from './pages/admin/AdminUsers'
 
 function App() {
   return (
@@ -36,6 +37,7 @@ function App() {
           <Route path="/admin/fixtures" element={<AdminRoute><AdminFixtures /></AdminRoute>} />
           <Route path="/admin/roster" element={<AdminRoute><AdminRoster /></AdminRoute>} />
           <Route path="/admin/data" element={<AdminRoute><AdminData /></AdminRoute>} />
+          <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
