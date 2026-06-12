@@ -1,6 +1,8 @@
 -- Fix leaderboard: count all predictions for finished matches, not just ones with points > 0.
 -- Also renames scoring_matches → played_matches to reflect the corrected meaning.
-create or replace view leaderboard as
+-- CREATE OR REPLACE cannot rename columns, so we drop and recreate.
+drop view leaderboard;
+create view leaderboard as
 select
     pr.id                                                            as user_id,
     pr.team_name,
