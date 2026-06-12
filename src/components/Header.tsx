@@ -87,7 +87,7 @@ function RulesModal({ onClose }: { onClose: () => void }) {
             <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-2">Base points</h3>
             <div className="space-y-1">
               <ScoreRow label="Exact scoreline" pts={5} highlight />
-              <ScoreRow label="Right result + correct goal difference" pts={3} />
+              <ScoreRow label="Right result + goal difference or one score correct" pts={3} />
               <ScoreRow label="Right result (win / draw / loss)" pts={2} />
               <ScoreRow label="Wrong result" pts={0} />
               <div className="border-t border-gray-100 my-2" />
@@ -123,12 +123,16 @@ function RulesModal({ onClose }: { onClose: () => void }) {
           </section>
 
           {/* Example */}
-          <section className="bg-green-50 rounded-xl px-4 py-3">
-            <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-2">Example</h3>
+          <section className="bg-green-50 rounded-xl px-4 py-3 space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-2">Examples</h3>
             <p className="text-sm text-gray-700">
               You predict <span className="font-semibold">2–1</span>, correct first scorer, and your player scores.
               That's <span className="font-semibold">5 + 1 + 2 = 8 base pts</span>. In a quarter-final (×2.5) that's{' '}
               <span className="font-bold text-green-700">20 pts</span>.
+            </p>
+            <p className="text-sm text-gray-700">
+              You predict <span className="font-semibold">2–1</span>, actual score is <span className="font-semibold">2–0</span>: right result and the 2 matched, so{' '}
+              <span className="font-semibold">3 pts</span> for the scoreline.
             </p>
           </section>
 

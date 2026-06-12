@@ -428,9 +428,14 @@ function ScoreBreakdown({ match, prediction, events }: {
     scorelinePts = 5; scorelineReason = 'Exact scoreline'
   } else if (
     predOutcome === actualOutcome &&
-    (prediction.pred_home_score - prediction.pred_away_score) === (match.home_score! - match.away_score!)
+    (
+      (prediction.pred_home_score - prediction.pred_away_score) === (match.home_score! - match.away_score!) ||
+      prediction.pred_home_score === match.home_score! ||
+      prediction.pred_away_score === match.away_score!
+    )
   ) {
-    scorelinePts = 3; scorelineReason = 'Right result & goal difference'
+    const gdMatch = (prediction.pred_home_score - prediction.pred_away_score) === (match.home_score! - match.away_score!)
+    scorelinePts = 3; scorelineReason = gdMatch ? 'Right result & goal difference' : 'Right result & score matched'
   } else if (predOutcome === actualOutcome) {
     scorelinePts = 2; scorelineReason = 'Right result'
   } else {
