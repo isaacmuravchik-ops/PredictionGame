@@ -357,6 +357,16 @@ function LockedView({ match, myPrediction, allPredictions, matchEvents, userId }
         <ScoreBreakdown match={match} prediction={myPrediction} events={matchEvents} />
       )}
 
+      {/* You vs. the group — rank and average for this match */}
+      {isFinished && myPrediction && allPredictions.length > 0 && (
+        <GroupComparisonPanel myPrediction={myPrediction} allPredictions={allPredictions} userId={userId} />
+      )}
+
+      {/* Group consensus — aggregate prediction breakdown */}
+      {allPredictions.length > 0 && (
+        <GroupConsensusPanel allPredictions={allPredictions} match={match} />
+      )}
+
       {/* All predictions (visible after kickoff) */}
       {allPredictions.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
@@ -534,6 +544,123 @@ function BreakdownRow({ label, detail, tag, correct, pts, maxPts }: {
           {pts} / {maxPts}
         </span>
       </div>
+    </div>
+  )
+}
+
+// ─── You vs. the group ────────────────────────────────────────────────────────
+
+function GroupComparisonPanel({ myPrediction, allPredictions, userId }: {
+  myPrediction: Prediction
+  allPredictions: PredictionWithTeam[]
+  userId: string
+}) {
+  const withPts = allPredictions.filter(p => p.points != null)
+  if (withPts.length === 0) return null
+
+  const avg = withPts.reduce((sum, p) => sum + Number(p.points), 0) / withPts.length
+  const sorted = [...withPts].sort((a, b) => Number(b.points) - Number(a.points))
+  const myRank = sorted.findIndex(p => p.user_id === userId) + 1
+  const myPts = Number(myPrediction.points)
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">You vs. the group</p>
+      <div className="flex items-center justify-around text-center">
+        <div>
+          <p className={`text-3xl font-black tabular-nums ${myPts > avg ? 'text-green-700' : myPts < avg ? 'text-red-500' : 'text-gray-700'}`}>
+            {myPts % 1 === 0 ? myPts : myPts.toFixed(1)}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">Your pts</p>
+        </div>
+        <div className="w-px h-10 bg-gray-100" />
+        <div>
+          <p className="text-3xl font-black text-gray-400 tabular-nums">
+            {avg % 1 === 0 ? avg : avg.toFixed(1)}
+          </p>
+          <p className="text-xs text-gray-400 mt-1">Group avg</p>
+        </div>
+        <div className="w-px h-10 bg-gray-100" />
+        <div>
+          <p className="text-3xl font-black text-gray-700 tabular-nums">#{myRank}</p>
+          <p className="text-xs text-gray-400 mt-1">This match</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Group consensus ──────────────────────────────────────────────────────────
+
+function GroupConsensusPanel({ allPredictions, match }: {
+  allPredictions: PredictionWithTeam[]
+  match: Match
+}) {
+  const total = allPredictions.length
+  if (total === 0) return null
+
+  const homeWins = allPredictions.filter(p => p.pred_home_score > p.pred_away_score).length
+  const awayWins = allPredictions.filter(p => p.pred_home_score < p.pred_away_score).length
+  const draws = total - homeWins - awayWins
+
+  const scoreCounts: Record<string, number> = {}
+  for (const p of allPredictions) {
+    const key = `${p.pred_home_score}–${p.pred_away_score}`
+    scoreCounts[key] = (scoreCounts[key] ?? 0) + 1
+  }
+  const [topScore, topScoreCount] = Object.entries(scoreCounts).sort((a, b) => b[1] - a[1])[0]
+
+  const playerCounts: Record<string, number> = {}
+  for (const p of allPredictions) {
+    playerCounts[p.pred_player_name] = (playerCounts[p.pred_player_name] ?? 0) + 1
+  }
+  const [topPlayer, topPlayerCount] = Object.entries(playerCounts).sort((a, b) => b[1] - a[1])[0]
+
+  const homeName = match.home_team.split(' ').slice(-1)[0]
+  const awayName = match.away_team.split(' ').slice(-1)[0]
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">Group consensus</p>
+      <div className="space-y-4">
+        {/* Result direction */}
+        <div>
+          <p className="text-xs text-gray-400 mb-2">Predicted result</p>
+          <div className="flex gap-3">
+            <ConsensusBar label={homeName} count={homeWins} total={total} color="bg-green-500" />
+            <ConsensusBar label="Draw" count={draws} total={total} color="bg-gray-300" />
+            <ConsensusBar label={awayName} count={awayWins} total={total} color="bg-blue-400" />
+          </div>
+        </div>
+        {/* Top score and top player */}
+        <div className="grid grid-cols-2 gap-3 border-t border-gray-50 pt-3">
+          <div>
+            <p className="text-xs text-gray-400 mb-1">Top predicted score</p>
+            <p className="font-bold text-gray-800 text-base">{topScore}</p>
+            <p className="text-xs text-gray-400">{topScoreCount} of {total} picked</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 mb-1">Top player pick</p>
+            <p className="font-bold text-gray-800 text-base truncate">{topPlayer}</p>
+            <p className="text-xs text-gray-400">{topPlayerCount} of {total} picked</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ConsensusBar({ label, count, total, color }: {
+  label: string; count: number; total: number; color: string
+}) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0
+  return (
+    <div className="flex-1 text-center">
+      <p className="text-sm font-semibold text-gray-700 mb-1">{pct}%</p>
+      <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-1">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-xs text-gray-400 truncate">{label}</p>
     </div>
   )
 }

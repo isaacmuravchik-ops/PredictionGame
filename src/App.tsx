@@ -8,6 +8,7 @@ import { AuthCallback } from './pages/AuthCallback'
 import { Matches } from './pages/Matches'
 import { MatchDetail } from './pages/MatchDetail'
 import { Leaderboard } from './pages/Leaderboard'
+import { Stats } from './pages/Stats'
 import { AdminResults } from './pages/admin/AdminResults'
 import { AdminResultEditor } from './pages/admin/AdminResultEditor'
 import { AdminFixtures } from './pages/admin/AdminFixtures'
@@ -29,6 +30,7 @@ function App() {
           <Route path="/" element={<ProtectedRoute><Matches /></ProtectedRoute>} />
           <Route path="/matches/:id" element={<ProtectedRoute><MatchDetail /></ProtectedRoute>} />
           <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+          <Route path="/stats" element={<ProtectedRoute><Stats /></ProtectedRoute>} />
 
           {/* Admin routes */}
           <Route path="/admin" element={<Navigate to="/admin/results" replace />} />
