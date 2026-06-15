@@ -183,9 +183,10 @@ function StandingsTab({ rows, myId }: { rows: LeaderboardRow[]; myId: string }) 
                 <td className="py-3 px-4 text-center font-bold text-gray-400">
                   {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
                 </td>
-                <td className="py-3 px-4 font-semibold text-gray-800">
-                  {row.team_name}
+                <td className="py-3 px-4">
+                  <span className="font-semibold text-gray-800">{row.team_name}</span>
                   {isMe && <span className="ml-2 text-xs font-normal text-green-600">(you)</span>}
+                  {row.real_name && <p className="text-xs text-gray-400 leading-tight">{row.real_name}</p>}
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`text-xl font-black tabular-nums ${isMe ? 'text-green-700' : i === 0 ? 'text-green-800' : 'text-gray-800'}`}>
@@ -278,13 +279,16 @@ function FormTab({
                 <tr key={row.user_id} className={isMe ? 'bg-green-50' : 'hover:bg-gray-50'}>
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-1.5">
-                      <span className={`text-[10px] font-bold leading-none ${mv > 0 ? 'text-green-500' : mv < 0 ? 'text-red-400' : 'text-gray-300'}`}>
+                      <span className={`text-[10px] font-bold leading-none shrink-0 ${mv > 0 ? 'text-green-500' : mv < 0 ? 'text-red-400' : 'text-gray-300'}`}>
                         {mv > 0 ? '▲' : mv < 0 ? '▼' : '–'}
                       </span>
-                      <span className="font-semibold text-gray-800">
-                        {row.team_name}
-                        {isMe && <span className="ml-1.5 text-xs font-normal text-green-600">(you)</span>}
-                      </span>
+                      <div>
+                        <span className="font-semibold text-gray-800">
+                          {row.team_name}
+                          {isMe && <span className="ml-1.5 text-xs font-normal text-green-600">(you)</span>}
+                        </span>
+                        {row.real_name && <p className="text-xs text-gray-400 leading-tight">{row.real_name}</p>}
+                      </div>
                     </div>
                   </td>
                   <td className="py-3 px-4">

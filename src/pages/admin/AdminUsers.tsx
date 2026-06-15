@@ -5,6 +5,7 @@ import { AdminLayout } from './AdminLayout'
 interface Profile {
   id: string
   team_name: string
+  real_name: string | null
   is_admin: boolean
   created_at: string
 }
@@ -13,7 +14,8 @@ export function AdminUsers() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
+  const [editTeamName, setEditTeamName] = useState('')
+  const [editRealName, setEditRealName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -21,7 +23,7 @@ export function AdminUsers() {
     setLoading(true)
     const { data } = await supabase
       .from('profiles')
-      .select('id, team_name, is_admin, created_at')
+      .select('id, team_name, real_name, is_admin, created_at')
       .order('team_name')
     setProfiles((data ?? []) as Profile[])
     setLoading(false)
@@ -31,31 +33,35 @@ export function AdminUsers() {
 
   function startEdit(profile: Profile) {
     setEditingId(profile.id)
-    setEditName(profile.team_name)
+    setEditTeamName(profile.team_name)
+    setEditRealName(profile.real_name ?? '')
     setError(null)
   }
 
   function cancelEdit() {
     setEditingId(null)
-    setEditName('')
+    setEditTeamName('')
+    setEditRealName('')
     setError(null)
   }
 
-  async function saveRename(id: string) {
-    const name = editName.trim()
-    if (!name) return
+  async function saveEdit(id: string) {
+    const teamName = editTeamName.trim()
+    if (!teamName) return
     setSaving(true)
     setError(null)
     const { error: err } = await supabase
       .from('profiles')
-      .update({ team_name: name })
+      .update({ team_name: teamName, real_name: editRealName.trim() || null })
       .eq('id', id)
     setSaving(false)
     if (err) {
       setError(err.message)
     } else {
       setEditingId(null)
-      setProfiles(prev => prev.map(p => p.id === id ? { ...p, team_name: name } : p))
+      setProfiles(prev => prev.map(p =>
+        p.id === id ? { ...p, team_name: teamName, real_name: editRealName.trim() || null } : p
+      ))
     }
   }
 
@@ -80,7 +86,7 @@ export function AdminUsers() {
     <AdminLayout>
       <h1 className="text-lg font-bold text-gray-800 mb-1">Users</h1>
       <p className="text-sm text-gray-500 mb-5">
-        Rename a team or remove a user. Deleting a user removes their profile and all predictions.
+        Edit a team name or real name, or remove a user. Deleting a user removes their profile and all predictions.
       </p>
 
       {error && (
@@ -108,23 +114,41 @@ export function AdminUsers() {
                 <tr key={profile.id} className="hover:bg-gray-50">
                   <td className="py-3 px-4">
                     {editingId === profile.id ? (
-                      <input
-                        autoFocus
-                        value={editName}
-                        onChange={e => setEditName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') saveRename(profile.id)
-                          if (e.key === 'Escape') cancelEdit()
-                        }}
-                        className="border border-green-400 rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-green-500"
-                      />
+                      <div className="flex flex-col gap-1.5">
+                        <input
+                          autoFocus
+                          placeholder="Team name"
+                          value={editTeamName}
+                          onChange={e => setEditTeamName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') saveEdit(profile.id)
+                            if (e.key === 'Escape') cancelEdit()
+                          }}
+                          className="border border-green-400 rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                        <input
+                          placeholder="Real name (optional)"
+                          value={editRealName}
+                          onChange={e => setEditRealName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') saveEdit(profile.id)
+                            if (e.key === 'Escape') cancelEdit()
+                          }}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm w-full max-w-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+                        />
+                      </div>
                     ) : (
-                      <span className="font-semibold text-gray-800">
-                        {profile.team_name}
-                        {profile.is_admin && (
-                          <span className="ml-2 text-xs font-normal text-gray-400">admin</span>
+                      <div>
+                        <span className="font-semibold text-gray-800">
+                          {profile.team_name}
+                          {profile.is_admin && (
+                            <span className="ml-2 text-xs font-normal text-gray-400">admin</span>
+                          )}
+                        </span>
+                        {profile.real_name && (
+                          <p className="text-xs text-gray-400 leading-tight">{profile.real_name}</p>
                         )}
-                      </span>
+                      </div>
                     )}
                   </td>
                   <td className="py-3 px-4 text-gray-400 text-xs hidden sm:table-cell">
@@ -134,8 +158,8 @@ export function AdminUsers() {
                     {editingId === profile.id ? (
                       <div className="flex justify-end gap-2">
                         <button
-                          onClick={() => saveRename(profile.id)}
-                          disabled={saving || !editName.trim()}
+                          onClick={() => saveEdit(profile.id)}
+                          disabled={saving || !editTeamName.trim()}
                           className="text-xs px-3 py-1 bg-green-700 hover:bg-green-800 disabled:opacity-40 text-white rounded-lg font-medium transition-colors"
                         >
                           {saving ? 'Saving…' : 'Save'}
@@ -154,7 +178,7 @@ export function AdminUsers() {
                           onClick={() => startEdit(profile)}
                           className="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
                         >
-                          Rename
+                          Edit
                         </button>
                         <button
                           onClick={() => deleteUser(profile)}

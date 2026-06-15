@@ -1,6 +1,7 @@
 export interface Profile {
   id: string
   team_name: string
+  real_name: string | null
   is_admin: boolean
   created_at: string
 }
@@ -44,6 +45,7 @@ export interface MatchEvent {
 export interface LeaderboardRow {
   user_id: string
   team_name: string
+  real_name: string | null
   total_points: number
   played_matches: number
 }
