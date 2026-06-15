@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { Header } from '../components/Header'
-import { flagEmoji } from '../lib/utils'
+import { flagEmoji, STAGE_MULTIPLIERS } from '../lib/utils'
 import type { Match, Prediction, LeaderboardRow } from '../types/database'
 
 type PredictionWithMatch = Prediction & { match: Match }
@@ -132,7 +132,7 @@ export function Stats() {
         <div>
           <h1 className="text-lg font-bold text-gray-800">My Stats</h1>
           <p className="text-sm text-gray-400">
-            {graded} graded match{graded !== 1 ? 'es' : ''} · {fmtPts(totalPts)} pts total
+            {graded} graded match{graded !== 1 ? 'es' : ''} · {fmtPts(totalPts)} pts total · {fmtPts(totalPts / graded)} avg
           </p>
         </div>
 
@@ -165,6 +165,32 @@ export function Stats() {
               </div>
             </div>
           ))}
+        </StatCard>
+
+        {/* Recent form */}
+        <StatCard title="Recent form">
+          <div className="flex gap-2 flex-wrap">
+            {[...predictions]
+              .sort((a, b) => new Date(b.match.kickoff_utc).getTime() - new Date(a.match.kickoff_utc).getTime())
+              .slice(0, 5)
+              .map(p => {
+                const pts = Number(p.points)
+                const ratio = pts / (9 * (STAGE_MULTIPLIERS[p.match.stage] ?? 1.0))
+                const cls = pts === 0
+                  ? 'bg-gray-100 text-gray-400'
+                  : ratio < 0.34
+                  ? 'bg-amber-50 text-amber-600 border border-amber-100'
+                  : 'bg-green-50 text-green-700 border border-green-100'
+                return (
+                  <div key={p.id} className={`flex flex-col items-center rounded-xl px-3 py-2 min-w-[56px] ${cls}`}>
+                    <span className="text-lg font-black tabular-nums leading-none">{fmtPts(pts)}</span>
+                    <span className="text-[11px] mt-1 opacity-60 tracking-tight">
+                      {flagEmoji(p.match.home_team)}{flagEmoji(p.match.away_team)}
+                    </span>
+                  </div>
+                )
+              })}
+          </div>
         </StatCard>
 
         {/* Highlights */}

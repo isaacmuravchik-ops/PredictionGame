@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { Header } from '../components/Header'
 import type { Match, Prediction, MatchEvent } from '../types/database'
-import { getMatchState, formatKickoffTime, stageLabel, firstTeamLabel, flagEmoji } from '../lib/utils'
+import { getMatchState, formatKickoffTime, stageLabel, firstTeamLabel, flagEmoji, STAGE_MULTIPLIERS } from '../lib/utils'
 
 type PredictionWithTeam = Prediction & { profiles: { team_name: string } }
 
@@ -416,10 +416,6 @@ function LockedView({ match, myPrediction, allPredictions, matchEvents, userId }
 }
 
 // ─── Score breakdown card ──────────────────────────────────────────────────────
-
-const STAGE_MULTIPLIERS: Record<string, number> = {
-  group: 1.0, r32: 1.5, r16: 2.0, qf: 2.5, sf: 3.0, '3rd': 2.0, final: 4.0,
-}
 
 function ScoreBreakdown({ match, prediction, events }: {
   match: Match; prediction: Prediction; events: MatchEvent[]

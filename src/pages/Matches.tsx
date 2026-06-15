@@ -11,6 +11,7 @@ import {
   stageLabel,
   firstTeamLabel,
   flagEmoji,
+  STAGE_MULTIPLIERS,
 } from '../lib/utils'
 
 export function Matches() {
@@ -120,7 +121,7 @@ function MatchRow({ match, prediction }: { match: Match; prediction?: Prediction
           <div className="shrink-0 text-right">
             {prediction ? (
               <>
-                <p className="text-xl font-black text-green-700 leading-none">{prediction.points}</p>
+                <p className={`text-xl font-black leading-none ${ptsColor(Number(prediction.points), match.stage)}`}>{prediction.points}</p>
                 <p className="text-xs text-gray-400 mt-0.5">pts</p>
               </>
             ) : (
@@ -160,6 +161,12 @@ function MatchRow({ match, prediction }: { match: Match; prediction?: Prediction
       )}
     </Link>
   )
+}
+
+function ptsColor(pts: number, stage: string): string {
+  if (pts === 0) return 'text-gray-300'
+  const ratio = pts / (9 * (STAGE_MULTIPLIERS[stage] ?? 1.0))
+  return ratio < 0.34 ? 'text-amber-500' : 'text-green-700'
 }
 
 function Countdown({ kickoffUtc }: { kickoffUtc: string }) {

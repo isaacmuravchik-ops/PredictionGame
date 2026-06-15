@@ -40,38 +40,52 @@ export function Leaderboard() {
                   <th className="text-center py-3 px-4 font-medium w-10">#</th>
                   <th className="text-left py-3 px-4 font-medium">Team</th>
                   <th className="text-right py-3 px-4 font-medium">Points</th>
-                  <th className="text-right py-3 px-4 font-medium hidden sm:table-cell">Scoring</th>
+                  <th className="text-right py-3 px-4 font-medium hidden sm:table-cell">Avg</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {rows.map((row, i) => {
-                  const isMe = row.user_id === session!.user.id
-                  return (
-                    <tr
-                      key={row.user_id}
-                      className={isMe ? 'bg-green-50' : 'hover:bg-gray-50'}
-                    >
-                      <td className="py-3 px-4 text-center font-bold text-gray-400">
-                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-gray-800">
-                        {row.team_name}
-                        {isMe && (
-                          <span className="ml-2 text-xs font-normal text-green-600">(you)</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        <span className={`text-xl font-black tabular-nums ${isMe ? 'text-green-700' : i === 0 ? 'text-green-800' : 'text-gray-800'}`}>
-                          {Number(row.total_points).toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                        </span>
-                        <span className="text-xs text-gray-400 ml-1">pts</span>
-                      </td>
-                      <td className="py-3 px-4 text-right text-gray-400 hidden sm:table-cell text-xs">
-                        {Number(row.played_matches)} played
-                      </td>
-                    </tr>
-                  )
-                })}
+                {(() => {
+                  const leaderPts = Math.max(1, ...rows.map(r => Number(r.total_points)))
+                  return rows.map((row, i) => {
+                    const isMe = row.user_id === session!.user.id
+                    const barPct = Math.round((Number(row.total_points) / leaderPts) * 100)
+                    const played = Number(row.played_matches)
+                    const avg = played > 0
+                      ? (Number(row.total_points) / played).toLocaleString(undefined, { maximumFractionDigits: 1 })
+                      : '—'
+                    return (
+                      <tr
+                        key={row.user_id}
+                        className={isMe ? 'bg-green-50' : 'hover:bg-gray-50'}
+                      >
+                        <td className="py-3 px-4 text-center font-bold text-gray-400">
+                          {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-gray-800">
+                          {row.team_name}
+                          {isMe && (
+                            <span className="ml-2 text-xs font-normal text-green-600">(you)</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <span className={`text-xl font-black tabular-nums ${isMe ? 'text-green-700' : i === 0 ? 'text-green-800' : 'text-gray-800'}`}>
+                            {Number(row.total_points).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                          </span>
+                          <span className="text-xs text-gray-400 ml-1">pts</span>
+                          <div className="mt-1 h-0.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${isMe ? 'bg-green-500' : i === 0 ? 'bg-green-600' : 'bg-gray-300'}`}
+                              style={{ width: `${barPct}%` }}
+                            />
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-right text-gray-400 hidden sm:table-cell text-xs">
+                          {avg} pts/m
+                        </td>
+                      </tr>
+                    )
+                  })
+                })()}
               </tbody>
             </table>
           </div>
