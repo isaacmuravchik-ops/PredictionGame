@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { Header } from '../components/Header'
-import { flagEmoji, STAGE_MULTIPLIERS } from '../lib/utils'
+import { flagEmoji, STAGE_MULTIPLIERS, isEligibleForPrize, PRIZE_AMOUNTS } from '../lib/utils'
 import type { Match, Prediction, LeaderboardRow } from '../types/database'
 
 type PredictionWithMatch = Prediction & { match: Match }
@@ -22,11 +22,12 @@ export function Stats() {
   const { session } = useAuth()
   const [predictions, setPredictions] = useState<PredictionWithMatch[]>([])
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([])
+  const [pointsAtStake, setPointsAtStake] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
-      const [{ data: pData }, { data: lbData }] = await Promise.all([
+      const [{ data: pData }, { data: lbData }, { data: scheduledData }] = await Promise.all([
         supabase
           .from('predictions')
           .select('*, match:matches(*)')
@@ -35,11 +36,18 @@ export function Stats() {
           .from('leaderboard')
           .select('*')
           .order('total_points', { ascending: false }),
+        supabase.from('matches').select('stage').eq('status', 'scheduled'),
       ])
 
       const allPreds = (pData ?? []) as PredictionWithMatch[]
       setPredictions(allPreds.filter(p => p.match?.status === 'finished'))
       setLeaderboard((lbData ?? []) as LeaderboardRow[])
+      setPointsAtStake(
+        ((scheduledData ?? []) as { stage: string }[]).reduce(
+          (sum, m) => sum + 9 * (STAGE_MULTIPLIERS[m.stage] ?? 1),
+          0
+        )
+      )
       setLoading(false)
     }
     load()
@@ -124,6 +132,12 @@ export function Stats() {
   const myRow = myIdx >= 0 ? leaderboard[myIdx] : null
   const aboveRow = myIdx > 0 ? leaderboard[myIdx - 1] : null
   const belowRow = myIdx >= 0 && myIdx < leaderboard.length - 1 ? leaderboard[myIdx + 1] : null
+
+  const eligibleRows = leaderboard.filter(isEligibleForPrize)
+  const isMyRowEligible = myRow ? isEligibleForPrize(myRow) : false
+  const myPrizeRank = isMyRowEligible ? eligibleRows.findIndex(r => r.user_id === session!.user.id) : -1
+  const myPrize = myPrizeRank >= 0 && myPrizeRank < 3 ? PRIZE_AMOUNTS[myPrizeRank] : null
+  const PRIZE_ICONS = ['🥇', '🥈', '🥉']
 
   return (
     <>
@@ -245,6 +259,68 @@ export function Stats() {
                   +{fmtPts(Number(myRow.total_points) - Number(belowRow.total_points))} pts
                 </span>
               </div>
+            )}
+          </StatCard>
+        )}
+
+        {/* Prize status — only shown for eligible players */}
+        {isMyRowEligible && myRow && (
+          <StatCard title="Prize status">
+            {myPrize !== null ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Currently earning</span>
+                  <span className="text-2xl font-black text-yellow-700">
+                    {PRIZE_ICONS[myPrizeRank]} ${myPrize.toLocaleString()}
+                  </span>
+                </div>
+                {eligibleRows[myPrizeRank + 1] && (
+                  <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-50">
+                    <span className="text-gray-500">
+                      Lead over <span className="font-medium text-gray-700">{eligibleRows[myPrizeRank + 1].team_name}</span>
+                    </span>
+                    <div className="text-right">
+                      <span className="font-semibold text-green-600">
+                        +{fmtPts(Number(myRow.total_points) - Number(eligibleRows[myPrizeRank + 1].total_points))} pts
+                      </span>
+                      {pointsAtStake > 0 && (
+                        <p className="text-[10px] text-gray-400">{fmtPts(pointsAtStake)} pts at stake</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-gray-400 mb-1">Points needed to reach prize positions:</p>
+                {PRIZE_AMOUNTS.map((amount, i) => {
+                  const prizeHolder = eligibleRows[i]
+                  if (!prizeHolder) return null
+                  const gap = Number(prizeHolder.total_points) - Number(myRow.total_points)
+                  if (gap <= 0) return null
+                  const reachable = pointsAtStake === 0 ? false : gap <= pointsAtStake
+                  return (
+                    <div key={i} className="flex items-center justify-between text-sm pt-1.5 border-t border-gray-50">
+                      <span className="text-gray-600">
+                        {PRIZE_ICONS[i]} ${amount.toLocaleString()}
+                      </span>
+                      <div className="text-right">
+                        <span className={`font-semibold ${reachable ? 'text-amber-600' : 'text-gray-400'}`}>
+                          {fmtPts(gap)} pts behind
+                        </span>
+                        {!reachable && pointsAtStake > 0 && (
+                          <p className="text-[10px] text-red-400">Out of reach</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+                {pointsAtStake > 0 && (
+                  <p className="text-xs text-gray-400 pt-2 border-t border-gray-50">
+                    {fmtPts(pointsAtStake)} pts available in remaining matches
+                  </p>
+                )}
+              </>
             )}
           </StatCard>
         )}

@@ -140,3 +140,9 @@ export function firstTeamLabel(value: string): string {
   if (value === 'away') return 'Away'
   return 'No goals'
 }
+
+export const PRIZE_AMOUNTS = [350, 150, 60]
+
+export function isEligibleForPrize(row: { is_bot: boolean; team_name: string }): boolean {
+  return !row.is_bot && !row.team_name.includes('(No Prize)')
+}
