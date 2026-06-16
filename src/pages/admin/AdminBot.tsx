@@ -125,12 +125,12 @@ export function AdminBot() {
     }
   }
 
-  async function handlePredict() {
+  async function handlePredict(allUpcoming = false) {
     setBusy(true)
     setActionError(null)
     setActionStatus(null)
     try {
-      const data = await callBotApi('bot-predict', session!.access_token)
+      const data = await callBotApi('bot-predict', session!.access_token, { allUpcoming })
       setActionStatus(
         data.predicted === 0
           ? (data.message ?? 'No new predictions generated.')
@@ -175,7 +175,7 @@ export function AdminBot() {
         <>
           <BotStatusCard status={botStatus} />
 
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
             <ActionCard
               title="Set Starting Points"
               description="Calculate median points across all human players and assign that as the bot's starting offset, accounting for missed matches."
@@ -184,10 +184,17 @@ export function AdminBot() {
               busy={busy}
             />
             <ActionCard
-              title="Generate Predictions"
-              description="Ask Claude to predict all upcoming matches that don't yet have a bot prediction. Uses the squad roster for informed player picks."
-              buttonLabel="Generate Now"
-              onAction={handlePredict}
+              title="Generate Today's Picks"
+              description="Ask Claude to predict matches kicking off in the next 24 hours. Run this each matchday for up-to-date predictions."
+              buttonLabel="Generate Today"
+              onAction={() => handlePredict(false)}
+              busy={busy}
+            />
+            <ActionCard
+              title="Generate All Upcoming"
+              description="Predict every future match at once. Use sparingly — predictions made weeks out won't reflect current form or squad news."
+              buttonLabel="Generate All"
+              onAction={() => handlePredict(true)}
               busy={busy}
             />
           </div>
