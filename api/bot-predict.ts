@@ -39,35 +39,19 @@ export default async function handler(req: any, res: any) {
   const allUpcoming: boolean = body.allUpcoming === true
 
   const now = new Date()
+  const cutoff = new Date(now.getTime() + 24 * 60 * 60 * 1000)
 
-  // End of today in Eastern Time: find when ET midnight tomorrow is in UTC
-  const etFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  })
-  const etParts = etFormatter.formatToParts(now)
-  const etYear  = etParts.find(p => p.type === 'year')!.value
-  const etMonth = etParts.find(p => p.type === 'month')!.value
-  const etDay   = etParts.find(p => p.type === 'day')!.value
-  // midnight tomorrow ET as UTC
-  const endOfTodayET = new Date(`${etYear}-${etMonth}-${etDay}T00:00:00`)
-  endOfTodayET.setDate(endOfTodayET.getDate() + 1)
-  // Convert to UTC by adding ET offset (ET is UTC-5 or UTC-4; use getTimezoneOffset approach)
-  // Simpler: parse midnight-tomorrow as ET by creating an ISO string with the right date
-  // and letting the Intl offset handle it. We use a fixed +24h window as a safe bound.
-  const cutoff = allUpcoming ? null : new Date(now.getTime() + 24 * 60 * 60 * 1000)
-
-  // Upcoming matches not yet kicked off, optionally capped to today
-  const query = admin
+  // Upcoming matches not yet kicked off, capped to next 24h unless allUpcoming is set
+  const baseQuery = admin
     .from('matches')
     .select('id, home_team, away_team, stage, group_label, kickoff_utc')
     .eq('status', 'scheduled')
     .gt('kickoff_utc', now.toISOString())
     .order('kickoff_utc', { ascending: true })
 
-  if (cutoff) query.lte('kickoff_utc', cutoff.toISOString())
-
-  const { data: matches } = await query
+  const { data: matches } = await (
+    allUpcoming ? baseQuery : baseQuery.lte('kickoff_utc', cutoff.toISOString())
+  )
 
   if (!matches || matches.length === 0) {
     return res.status(200).json({ predicted: 0, message: 'No upcoming matches' })

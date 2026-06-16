@@ -184,9 +184,9 @@ export function AdminBot() {
               busy={busy}
             />
             <ActionCard
-              title="Generate Today's Picks"
-              description="Ask Claude to predict matches kicking off in the next 24 hours. Run this each matchday for up-to-date predictions."
-              buttonLabel="Generate Today"
+              title="Generate Next 24 Hours"
+              description="Ask Claude to predict matches kicking off in the next 24 hours. Run this each day for up-to-date predictions."
+              buttonLabel="Next 24 Hours"
               onAction={() => handlePredict(false)}
               busy={busy}
             />
