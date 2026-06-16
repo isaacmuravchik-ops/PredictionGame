@@ -32,13 +32,20 @@ interface BotPrediction {
   }
 }
 
+interface UpcomingMatch {
+  id: number
+  home_team: string
+  away_team: string
+  stage: string
+  group_label: string | null
+  kickoff_utc: string
+  predicted: boolean
+}
+
 async function callBotApi(endpoint: string, jwt: string, body?: object) {
   const res = await fetch(`/api/${endpoint}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${jwt}`,
-    },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
     body: JSON.stringify(body ?? {}),
   })
   const data = await res.json()
@@ -46,10 +53,20 @@ async function callBotApi(endpoint: string, jwt: string, body?: object) {
   return data
 }
 
+async function fetchBotStatus(jwt: string) {
+  const res = await fetch('/api/bot-status', {
+    headers: { Authorization: `Bearer ${jwt}` },
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`)
+  return data as { matches: UpcomingMatch[] }
+}
+
 export function AdminBot() {
   const { session } = useAuth()
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [predictions, setPredictions] = useState<BotPrediction[]>([])
+  const [upcomingMatches, setUpcomingMatches] = useState<UpcomingMatch[]>([])
   const [loading, setLoading] = useState(true)
   const [actionStatus, setActionStatus] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -58,6 +75,7 @@ export function AdminBot() {
 
   async function load() {
     setLoading(true)
+    const jwt = session!.access_token
 
     const [{ data: lbData }, { data: botData }] = await Promise.all([
       supabase.from('leaderboard').select('*').order('total_points', { ascending: false }),
@@ -82,13 +100,22 @@ export function AdminBot() {
       rank: rank > 0 ? rank : lb.length + 1,
     })
 
+    // Finished predictions visible via normal RLS (post-kickoff)
     const { data: preds } = await supabase
       .from('predictions')
       .select('id, match_id, pred_home_score, pred_away_score, pred_first_team, pred_player_name, rationale, points, matches(home_team, away_team, stage, group_label, kickoff_utc, status)')
       .eq('user_id', botData.id)
       .order('match_id', { ascending: false })
-
     setPredictions((preds ?? []) as unknown as BotPrediction[])
+
+    // Upcoming prediction coverage via service role (no prediction content)
+    try {
+      const { matches } = await fetchBotStatus(jwt)
+      setUpcomingMatches(matches)
+    } catch {
+      setUpcomingMatches([])
+    }
+
     setLoading(false)
   }
 
@@ -199,7 +226,7 @@ export function AdminBot() {
             />
           </div>
 
-          <BotPredictionTable predictions={predictions} />
+          <BotPredictionTable predictions={predictions} upcomingMatches={upcomingMatches} />
         </>
       )}
     </AdminLayout>
@@ -297,20 +324,17 @@ function ActionCard({
   )
 }
 
-function BotPredictionTable({ predictions }: { predictions: BotPrediction[] }) {
+function BotPredictionTable({
+  predictions,
+  upcomingMatches,
+}: {
+  predictions: BotPrediction[]
+  upcomingMatches: UpcomingMatch[]
+}) {
   const [filter, setFilter] = useState<'upcoming' | 'finished'>('upcoming')
 
-  if (predictions.length === 0) {
-    return (
-      <div className="mt-4 text-center py-10 text-gray-400 text-sm">
-        No predictions yet — click "Next 24 Hours" to have Claude predict upcoming matches.
-      </div>
-    )
-  }
-
-  const upcoming = predictions.filter(p => p.matches.status !== 'finished')
   const finished = predictions.filter(p => p.matches.status === 'finished')
-  const shown = filter === 'upcoming' ? upcoming : finished
+  const predictedCount = upcomingMatches.filter(m => m.predicted).length
 
   return (
     <div className="mt-4 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -325,7 +349,7 @@ function BotPredictionTable({ predictions }: { predictions: BotPrediction[] }) {
               filter === 'upcoming' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Upcoming ({upcoming.length})
+            Upcoming ({predictedCount}/{upcomingMatches.length})
           </button>
           <button
             onClick={() => setFilter('finished')}
@@ -338,49 +362,75 @@ function BotPredictionTable({ predictions }: { predictions: BotPrediction[] }) {
         </div>
       </div>
 
-      {shown.length === 0 ? (
-        <div className="px-5 py-8 text-center text-sm text-gray-400">
-          {filter === 'upcoming'
-            ? 'No upcoming predictions — run "Next 24 Hours" to generate some.'
-            : 'No finished matches yet.'}
-        </div>
-      ) : (
-      <div className="divide-y divide-gray-50">
-        {shown.map(p => (
-          <div key={p.id} className="px-5 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800">
-                  {p.matches.home_team} vs {p.matches.away_team}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {stageLabel(p.matches.stage, p.matches.group_label)} ·{' '}
-                  {formatKickoffTime(p.matches.kickoff_utc)}
-                </p>
-                <p className="text-xs text-gray-600 mt-1">
-                  <span className="font-medium">{p.pred_home_score}–{p.pred_away_score}</span>
-                  {' · '}
-                  {p.pred_first_team === 'home' ? p.matches.home_team.split(' ').slice(-1)[0]
-                    : p.pred_first_team === 'away' ? p.matches.away_team.split(' ').slice(-1)[0]
-                    : 'No goals'} first
-                  {' · '}
-                  {p.pred_player_name}
-                </p>
-                {p.rationale && (
-                  <p className="text-xs text-gray-400 italic mt-1">"{p.rationale}"</p>
-                )}
-              </div>
-              <div className="shrink-0 text-right">
-                {p.matches.status === 'finished' ? (
-                  <span className="text-base font-black text-green-700">{p.points} pts</span>
-                ) : (
-                  <span className="text-xs bg-blue-50 text-blue-500 border border-blue-100 rounded-md px-2 py-0.5 font-medium">Predicted</span>
-                )}
-              </div>
-            </div>
+      {filter === 'upcoming' ? (
+        upcomingMatches.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-gray-400">
+            No upcoming scheduled matches.
           </div>
-        ))}
-      </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {upcomingMatches.map(m => (
+              <div key={m.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">
+                    {m.home_team} vs {m.away_team}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {stageLabel(m.stage, m.group_label)} · {formatKickoffTime(m.kickoff_utc)}
+                  </p>
+                </div>
+                <div className="shrink-0">
+                  {m.predicted ? (
+                    <span className="text-xs bg-green-50 text-green-700 border border-green-200 rounded-md px-2 py-0.5 font-medium">
+                      ✓ Predicted
+                    </span>
+                  ) : (
+                    <span className="text-xs bg-gray-50 text-gray-400 border border-gray-200 rounded-md px-2 py-0.5">
+                      Not yet
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        finished.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-gray-400">
+            No finished matches yet.
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {finished.map(p => (
+              <div key={p.id} className="px-5 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">
+                      {p.matches.home_team} vs {p.matches.away_team}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {stageLabel(p.matches.stage, p.matches.group_label)} ·{' '}
+                      {formatKickoffTime(p.matches.kickoff_utc)}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      <span className="font-medium">{p.pred_home_score}–{p.pred_away_score}</span>
+                      {' · '}
+                      {p.pred_first_team === 'home' ? p.matches.home_team.split(' ').slice(-1)[0]
+                        : p.pred_first_team === 'away' ? p.matches.away_team.split(' ').slice(-1)[0]
+                        : 'No goals'} first
+                      {' · '}
+                      {p.pred_player_name}
+                    </p>
+                    {p.rationale && (
+                      <p className="text-xs text-gray-400 italic mt-1">"{p.rationale}"</p>
+                    )}
+                  </div>
+                  <span className="text-base font-black text-green-700 shrink-0">{p.points} pts</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
       )}
     </div>
   )
