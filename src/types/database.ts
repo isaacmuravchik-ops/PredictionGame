@@ -3,6 +3,8 @@ export interface Profile {
   team_name: string
   real_name: string | null
   is_admin: boolean
+  is_bot: boolean
+  points_offset: number
   created_at: string
 }
 
@@ -31,6 +33,7 @@ export interface Prediction {
   pred_player_name: string
   base_points: number
   points: number
+  rationale: string | null
   created_at: string
   updated_at: string
 }
@@ -46,6 +49,7 @@ export interface LeaderboardRow {
   user_id: string
   team_name: string
   real_name: string | null
+  is_bot: boolean
   total_points: number
   played_matches: number
 }
