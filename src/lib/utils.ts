@@ -100,6 +100,14 @@ export function formatDateHeading(utcString: string): string {
   }
 }
 
+export function todayHeading(): string {
+  return formatDateHeading(new Date().toISOString())
+}
+
+export function headingToId(heading: string): string {
+  return heading.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+}
+
 export function groupMatchesByDate(matches: Match[]): [string, Match[]][] {
   const result: [string, Match[]][] = []
   const seen = new Set<string>()

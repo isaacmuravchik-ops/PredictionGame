@@ -12,6 +12,8 @@ import {
   firstTeamLabel,
   flagEmoji,
   STAGE_MULTIPLIERS,
+  todayHeading,
+  headingToId,
 } from '../lib/utils'
 
 export function Matches() {
@@ -45,6 +47,8 @@ export function Matches() {
   }
 
   const grouped = groupMatchesByDate(matches)
+  const todayId = headingToId(todayHeading())
+  const hasTodaySection = grouped.some(([h]) => headingToId(h) === todayId)
 
   return (
     <>
@@ -57,7 +61,7 @@ export function Matches() {
           </div>
         ) : (
           grouped.map(([heading, dayMatches]) => (
-            <section key={heading} className="mb-6">
+            <section key={heading} id={headingToId(heading)} className="mb-6">
               <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-2 px-1">
                 {heading}
               </h2>
@@ -74,6 +78,14 @@ export function Matches() {
           ))
         )}
       </main>
+      {hasTodaySection && (
+        <button
+          onClick={() => document.getElementById(todayId)?.scrollIntoView({ behavior: 'smooth' })}
+          className="fixed bottom-6 right-4 bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-full shadow-lg hover:bg-blue-700 active:scale-95 transition-all z-50"
+        >
+          Today ↓
+        </button>
+      )}
     </>
   )
 }
