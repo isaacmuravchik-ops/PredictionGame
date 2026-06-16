@@ -298,23 +298,55 @@ function ActionCard({
 }
 
 function BotPredictionTable({ predictions }: { predictions: BotPrediction[] }) {
+  const [filter, setFilter] = useState<'upcoming' | 'finished'>('upcoming')
+
   if (predictions.length === 0) {
     return (
       <div className="mt-4 text-center py-10 text-gray-400 text-sm">
-        No predictions yet — click "Generate Now" to have Claude predict upcoming matches.
+        No predictions yet — click "Next 24 Hours" to have Claude predict upcoming matches.
       </div>
     )
   }
 
+  const upcoming = predictions.filter(p => p.matches.status !== 'finished')
+  const finished = predictions.filter(p => p.matches.status === 'finished')
+  const shown = filter === 'upcoming' ? upcoming : finished
+
   return (
     <div className="mt-4 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-5 pt-4 pb-2 border-b border-gray-50">
+      <div className="px-5 pt-4 pb-3 border-b border-gray-100 flex items-center justify-between gap-3">
         <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
-          All Bot Predictions ({predictions.length})
+          Bot Predictions
         </p>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+          <button
+            onClick={() => setFilter('upcoming')}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              filter === 'upcoming' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Upcoming ({upcoming.length})
+          </button>
+          <button
+            onClick={() => setFilter('finished')}
+            className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+              filter === 'finished' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Finished ({finished.length})
+          </button>
+        </div>
       </div>
+
+      {shown.length === 0 ? (
+        <div className="px-5 py-8 text-center text-sm text-gray-400">
+          {filter === 'upcoming'
+            ? 'No upcoming predictions — run "Next 24 Hours" to generate some.'
+            : 'No finished matches yet.'}
+        </div>
+      ) : (
       <div className="divide-y divide-gray-50">
-        {predictions.map(p => (
+        {shown.map(p => (
           <div key={p.id} className="px-5 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
@@ -342,13 +374,14 @@ function BotPredictionTable({ predictions }: { predictions: BotPrediction[] }) {
                 {p.matches.status === 'finished' ? (
                   <span className="text-base font-black text-green-700">{p.points} pts</span>
                 ) : (
-                  <span className="text-xs text-gray-300">Pending</span>
+                  <span className="text-xs bg-blue-50 text-blue-500 border border-blue-100 rounded-md px-2 py-0.5 font-medium">Predicted</span>
                 )}
               </div>
             </div>
           </div>
         ))}
       </div>
+      )}
     </div>
   )
 }
