@@ -80,7 +80,10 @@ export function Matches() {
       </main>
       {hasTodaySection && (
         <button
-          onClick={() => document.getElementById(todayId)?.scrollIntoView({ behavior: 'smooth' })}
+          onClick={() => {
+            const el = document.getElementById(todayId)
+            if (el) window.scrollTo({ top: el.offsetTop - 64, behavior: 'smooth' })
+          }}
           className="fixed bottom-6 right-4 bg-blue-600 text-white text-sm font-semibold px-4 py-2 rounded-full shadow-lg hover:bg-blue-700 active:scale-95 transition-all z-50"
         >
           Today ↓
