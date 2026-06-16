@@ -7,22 +7,26 @@ export function Header() {
   const { profile } = useAuth()
   const navigate = useNavigate()
   const [showRules, setShowRules] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   async function signOut() {
     await supabase.auth.signOut()
     navigate('/signin', { replace: true })
   }
 
+  const closeMenu = () => setMenuOpen(false)
+
   return (
     <>
-      <header className="bg-green-800 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10 shadow">
-        <Link to="/" className="flex items-center gap-2">
+      <header className="bg-green-800 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-20 shadow">
+        <Link to="/" className="flex items-center gap-2" onClick={closeMenu}>
           <span className="text-lg">⚽</span>
           <span className="font-bold text-sm tracking-wide uppercase hidden sm:block">WC 2026 Predictions</span>
           <span className="font-bold text-sm tracking-wide uppercase sm:hidden">WC 2026</span>
         </Link>
 
-        <nav className="flex items-center gap-4">
+        {/* Desktop nav */}
+        <nav className="hidden sm:flex items-center gap-4">
           <Link to="/leaderboard" className="text-green-200 hover:text-white text-sm transition-colors">
             Leaderboard
           </Link>
@@ -40,16 +44,61 @@ export function Header() {
           <button
             onClick={() => setShowRules(true)}
             className="text-green-200 hover:text-white text-sm transition-colors"
-            title="How to play"
           >
             How to play
           </button>
-          <span className="text-green-300 text-sm hidden sm:block">{profile?.team_name}</span>
+          <span className="text-green-300 text-sm">{profile?.team_name}</span>
           <button onClick={signOut} className="text-green-200 hover:text-white text-sm transition-colors">
             Sign out
           </button>
         </nav>
+
+        {/* Mobile hamburger */}
+        <button
+          className="sm:hidden text-green-200 hover:text-white text-2xl leading-none p-1"
+          onClick={() => setMenuOpen(o => !o)}
+          aria-label="Toggle menu"
+        >
+          {menuOpen ? '✕' : '☰'}
+        </button>
       </header>
+
+      {/* Mobile dropdown menu */}
+      {menuOpen && (
+        <div className="sm:hidden bg-green-900 text-white flex flex-col sticky top-[52px] z-20 shadow-lg">
+          <Link to="/leaderboard" onClick={closeMenu} className="px-5 py-3 text-sm text-green-200 hover:bg-green-800 hover:text-white border-b border-green-800 transition-colors">
+            Leaderboard
+          </Link>
+          <Link to="/stats" onClick={closeMenu} className="px-5 py-3 text-sm text-green-200 hover:bg-green-800 hover:text-white border-b border-green-800 transition-colors">
+            Stats
+          </Link>
+          <Link to="/bot-picks" onClick={closeMenu} className="px-5 py-3 text-sm text-green-200 hover:bg-green-800 hover:text-white border-b border-green-800 transition-colors">
+            🤖 Bot
+          </Link>
+          {profile?.is_admin && (
+            <Link to="/admin" onClick={closeMenu} className="px-5 py-3 text-sm text-amber-300 hover:bg-green-800 hover:text-amber-100 border-b border-green-800 transition-colors">
+              Admin
+            </Link>
+          )}
+          <button
+            onClick={() => { setShowRules(true); closeMenu() }}
+            className="px-5 py-3 text-sm text-green-200 hover:bg-green-800 hover:text-white border-b border-green-800 transition-colors text-left"
+          >
+            How to play
+          </button>
+          {profile?.team_name && (
+            <div className="px-5 py-3 text-sm text-green-300 border-b border-green-800">
+              {profile.team_name}
+            </div>
+          )}
+          <button
+            onClick={() => { signOut(); closeMenu() }}
+            className="px-5 py-3 text-sm text-green-200 hover:bg-green-800 hover:text-white transition-colors text-left"
+          >
+            Sign out
+          </button>
+        </div>
+      )}
 
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
     </>

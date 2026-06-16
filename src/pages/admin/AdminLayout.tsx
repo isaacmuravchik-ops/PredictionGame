@@ -13,8 +13,8 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <Header />
-      <div className="bg-white border-b border-gray-200 sticky top-[52px] z-10">
-        <div className="max-w-4xl mx-auto px-4 flex gap-1">
+      <div className="bg-white border-b border-gray-200 sticky top-[52px] z-10 overflow-x-auto">
+        <div className="max-w-4xl mx-auto px-4 flex gap-1 whitespace-nowrap">
           <NavLink to="/admin/results" className={linkCls}>Results</NavLink>
           <NavLink to="/admin/fixtures" className={linkCls}>Fixtures</NavLink>
           <NavLink to="/admin/roster" className={linkCls}>Roster</NavLink>
