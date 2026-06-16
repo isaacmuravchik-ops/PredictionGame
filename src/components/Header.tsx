@@ -29,6 +29,9 @@ export function Header() {
           <Link to="/stats" className="text-green-200 hover:text-white text-sm transition-colors">
             Stats
           </Link>
+          <Link to="/bot-picks" className="text-green-200 hover:text-white text-sm transition-colors">
+            🤖 Bot
+          </Link>
           {profile?.is_admin && (
             <Link to="/admin" className="text-amber-300 hover:text-amber-100 text-sm transition-colors">
               Admin

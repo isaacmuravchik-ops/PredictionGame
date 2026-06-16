@@ -20,6 +20,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           <NavLink to="/admin/roster" className={linkCls}>Roster</NavLink>
           <NavLink to="/admin/data" className={linkCls}>Data</NavLink>
           <NavLink to="/admin/users" className={linkCls}>Users</NavLink>
+          <NavLink to="/admin/bot" className={linkCls}>Bot</NavLink>
         </div>
       </div>
       <main className="max-w-4xl mx-auto px-4 py-4">

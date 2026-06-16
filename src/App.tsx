@@ -15,6 +15,8 @@ import { AdminFixtures } from './pages/admin/AdminFixtures'
 import { AdminRoster } from './pages/admin/AdminRoster'
 import { AdminData } from './pages/admin/AdminData'
 import { AdminUsers } from './pages/admin/AdminUsers'
+import { AdminBot } from './pages/admin/AdminBot'
+import { BotPicks } from './pages/BotPicks'
 
 function App() {
   return (
@@ -31,6 +33,7 @@ function App() {
           <Route path="/matches/:id" element={<ProtectedRoute><MatchDetail /></ProtectedRoute>} />
           <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
           <Route path="/stats" element={<ProtectedRoute><Stats /></ProtectedRoute>} />
+          <Route path="/bot-picks" element={<ProtectedRoute><BotPicks /></ProtectedRoute>} />
 
           {/* Admin routes */}
           <Route path="/admin" element={<Navigate to="/admin/results" replace />} />
@@ -40,6 +43,7 @@ function App() {
           <Route path="/admin/roster" element={<AdminRoute><AdminRoster /></AdminRoute>} />
           <Route path="/admin/data" element={<AdminRoute><AdminData /></AdminRoute>} />
           <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
+          <Route path="/admin/bot" element={<AdminRoute><AdminBot /></AdminRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -15,6 +15,7 @@ interface RecentScore {
 interface FormEntry {
   user_id: string
   team_name: string
+  is_bot: boolean
   recentPts: number
   recentScores: RecentScore[]
   rankMovement: number
@@ -90,6 +91,7 @@ export function Leaderboard() {
         .map(r => ({
           user_id: r.user_id,
           team_name: r.team_name,
+          is_bot: r.is_bot,
           recentPts: recentPtsMap[r.user_id] ?? 0,
           recentScores: recentScoresMap[r.user_id] ?? [],
           rankMovement: (oldRankMap[r.user_id] ?? currentRankMap[r.user_id]) - currentRankMap[r.user_id],
@@ -186,7 +188,8 @@ function StandingsTab({ rows, myId }: { rows: LeaderboardRow[]; myId: string }) 
                 <td className="py-3 px-4">
                   <span className="font-semibold text-gray-800">{row.team_name}</span>
                   {isMe && <span className="ml-2 text-xs font-normal text-green-600">(you)</span>}
-                  {row.real_name && <p className="text-xs text-gray-400 leading-tight">{row.real_name}</p>}
+                  {row.is_bot && <span className="ml-2 text-xs font-normal text-purple-500">🤖 AI</span>}
+                  {row.real_name && !row.is_bot && <p className="text-xs text-gray-400 leading-tight">{row.real_name}</p>}
                 </td>
                 <td className="py-3 px-4 text-right">
                   <span className={`text-xl font-black tabular-nums ${isMe ? 'text-green-700' : i === 0 ? 'text-green-800' : 'text-gray-800'}`}>
@@ -286,8 +289,9 @@ function FormTab({
                         <span className="font-semibold text-gray-800">
                           {row.team_name}
                           {isMe && <span className="ml-1.5 text-xs font-normal text-green-600">(you)</span>}
+                          {row.is_bot && <span className="ml-1.5 text-xs font-normal text-purple-500">🤖</span>}
                         </span>
-                        {row.real_name && <p className="text-xs text-gray-400 leading-tight">{row.real_name}</p>}
+                        {row.real_name && !row.is_bot && <p className="text-xs text-gray-400 leading-tight">{row.real_name}</p>}
                       </div>
                     </div>
                   </td>
