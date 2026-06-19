@@ -72,6 +72,7 @@ export function AdminBot() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [teamName, setTeamName] = useState('Claude AI')
+  const [debugResults, setDebugResults] = useState<any[] | null>(null)
 
   async function load() {
     setLoading(true)
@@ -156,6 +157,7 @@ export function AdminBot() {
     setBusy(true)
     setActionError(null)
     setActionStatus(null)
+    setDebugResults(null)
     try {
       const data = await callBotApi('bot-predict', session!.access_token, { allUpcoming })
       setActionStatus(
@@ -163,6 +165,7 @@ export function AdminBot() {
           ? (data.message ?? 'No new predictions generated.')
           : `Generated ${data.predicted} of ${data.total} predictions.`
       )
+      if (data.results?.length > 0) setDebugResults(data.results)
       await load()
     } catch (e: any) {
       setActionError(e.message)
@@ -187,6 +190,10 @@ export function AdminBot() {
         <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
           {actionError}
         </div>
+      )}
+
+      {debugResults && debugResults.length > 0 && (
+        <DebugLog results={debugResults} onClose={() => setDebugResults(null)} />
       )}
 
       {loading ? (
@@ -320,6 +327,66 @@ function ActionCard({
       >
         {busy ? 'Working…' : buttonLabel}
       </button>
+    </div>
+  )
+}
+
+function DebugLog({ results, onClose }: { results: any[]; onClose: () => void }) {
+  const [open, setOpen] = useState<Set<number>>(new Set())
+  function toggle(i: number) {
+    setOpen(prev => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+  }
+
+  return (
+    <div className="mt-4 mb-2 bg-gray-900 rounded-2xl overflow-hidden text-xs font-mono">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-700">
+        <span className="text-gray-300 font-semibold tracking-wide">Claude I/O Debug — {results.length} match{results.length !== 1 ? 'es' : ''}</span>
+        <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-sm px-2">✕</button>
+      </div>
+      <div className="divide-y divide-gray-800 max-h-[600px] overflow-y-auto">
+        {results.map((r, i) => (
+          <div key={r.matchId ?? i}>
+            <button
+              onClick={() => toggle(i)}
+              className="w-full text-left px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-gray-800 transition-colors"
+            >
+              <span className={r.success ? 'text-green-400' : 'text-red-400'}>
+                {r.success ? '✓' : '✗'} Match {r.matchId}
+                {r.prediction && ` — ${r.prediction.homeScore}–${r.prediction.awayScore} · ${r.prediction.playerName}`}
+                {r.error && ` — ${r.error}`}
+              </span>
+              <span className="text-gray-600 shrink-0">{open.has(i) ? '▲' : '▼'}</span>
+            </button>
+
+            {open.has(i) && (
+              <div className="px-4 pb-4 space-y-3 bg-gray-950">
+                {r.prompt && (
+                  <div>
+                    <p className="text-gray-500 uppercase tracking-widest text-[10px] mt-3 mb-1">Prompt sent to Claude</p>
+                    <pre className="whitespace-pre-wrap text-green-300 text-[11px] leading-relaxed bg-gray-900 rounded-lg p-3 overflow-x-auto">{r.prompt}</pre>
+                  </div>
+                )}
+                {r.rawResponse && (
+                  <div>
+                    <p className="text-gray-500 uppercase tracking-widest text-[10px] mb-1">Claude's raw response</p>
+                    <pre className="whitespace-pre-wrap text-yellow-200 text-[11px] leading-relaxed bg-gray-900 rounded-lg p-3 overflow-x-auto">{r.rawResponse}</pre>
+                  </div>
+                )}
+                {r.prediction && (
+                  <div>
+                    <p className="text-gray-500 uppercase tracking-widest text-[10px] mb-1">Parsed &amp; stored</p>
+                    <pre className="whitespace-pre-wrap text-blue-300 text-[11px] leading-relaxed bg-gray-900 rounded-lg p-3 overflow-x-auto">{JSON.stringify(r.prediction, null, 2)}</pre>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

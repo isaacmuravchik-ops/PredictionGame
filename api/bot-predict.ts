@@ -81,7 +81,7 @@ export default async function handler(req: any, res: any) {
     rosterMap[p.team].push(p.name)
   }
 
-  const results: Array<{ matchId: number; success: boolean; prediction?: object; error?: string }> = []
+  const results: Array<{ matchId: number; success: boolean; prompt?: string; rawResponse?: string; prediction?: object; error?: string }> = []
 
   for (const match of unpredicted) {
     const homeRoster: string[] = rosterMap[match.home_team] ?? []
@@ -140,7 +140,7 @@ Return ONLY valid JSON with no markdown wrapping:
         const jsonMatch = raw.match(/\{[\s\S]*\}/)
         parsed = JSON.parse(jsonMatch?.[0] ?? raw)
       } catch {
-        results.push({ matchId: match.id, success: false, error: 'Failed to parse Claude response' })
+        results.push({ matchId: match.id, success: false, prompt, rawResponse: raw, error: 'Failed to parse Claude response' })
         continue
       }
 
@@ -183,6 +183,8 @@ Return ONLY valid JSON with no markdown wrapping:
       } else {
         results.push({
           matchId: match.id, success: true,
+          prompt,
+          rawResponse: raw,
           prediction: { homeScore, awayScore, firstTeam, playerName, rationale },
         })
       }
