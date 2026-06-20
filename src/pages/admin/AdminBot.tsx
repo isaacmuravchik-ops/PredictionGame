@@ -153,13 +153,13 @@ export function AdminBot() {
     }
   }
 
-  async function handlePredict(allUpcoming = false) {
+  async function handlePredict(allUpcoming = false, force = false) {
     setBusy(true)
     setActionError(null)
     setActionStatus(null)
     setDebugResults(null)
     try {
-      const data = await callBotApi('bot-predict', session!.access_token, { allUpcoming })
+      const data = await callBotApi('bot-predict', session!.access_token, { allUpcoming, force })
       setActionStatus(
         data.predicted === 0
           ? (data.message ?? 'No new predictions generated.')
@@ -229,6 +229,13 @@ export function AdminBot() {
               description="Predict every future match at once. Use sparingly — predictions made weeks out won't reflect current form or squad news."
               buttonLabel="Generate All"
               onAction={() => handlePredict(true)}
+              busy={busy}
+            />
+            <ActionCard
+              title="Re-run All Predictions"
+              description="Overwrite all existing upcoming predictions. Use this after fixing the bot logic to refresh player selections."
+              buttonLabel="Re-run All"
+              onAction={() => handlePredict(true, true)}
               busy={busy}
             />
           </div>
