@@ -37,6 +37,7 @@ export default async function handler(req: any, res: any) {
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})
   const allUpcoming: boolean = body.allUpcoming === true
+  const force: boolean = body.force === true
 
   const now = new Date()
   const cutoff = new Date(now.getTime() + 24 * 60 * 60 * 1000)
@@ -65,7 +66,7 @@ export default async function handler(req: any, res: any) {
     .in('match_id', matches.map((m: any) => m.id))
 
   const existingIds = new Set((existingPreds ?? []).map((p: any) => p.match_id))
-  const unpredicted = matches.filter((m: any) => !existingIds.has(m.id))
+  const unpredicted = force ? matches : matches.filter((m: any) => !existingIds.has(m.id))
 
   if (unpredicted.length === 0) {
     return res.status(200).json({ predicted: 0, message: 'All upcoming matches already predicted' })
