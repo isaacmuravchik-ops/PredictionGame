@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
 import { Header } from '../components/Header'
 import { STAGE_MULTIPLIERS, isEligibleForPrize, PRIZE_AMOUNTS } from '../lib/utils'
 import type { LeaderboardRow } from '../types/database'
 
-type Tab = 'standings' | 'form'
+const PlacementHistoryTab = lazy(() =>
+  import('./PlacementHistoryTab').then(m => ({ default: m.PlacementHistoryTab }))
+)
+
+type Tab = 'standings' | 'form' | 'history'
 
 interface RecentScore {
   pts: number
@@ -45,6 +49,11 @@ export function Leaderboard() {
   const [loading, setLoading] = useState(true)
   const [pointsAtStake, setPointsAtStake] = useState(0)
   const [scheduledCount, setScheduledCount] = useState(0)
+  const [allMatches, setAllMatches] = useState<Array<{
+    id: number; kickoff_utc: string; stage: string
+    home_team: string; away_team: string
+    predictions: { user_id: string; points: number }[]
+  }>>([])
 
   useEffect(() => {
     async function load() {
@@ -52,7 +61,7 @@ export function Leaderboard() {
         supabase.from('leaderboard').select('*'),
         supabase
           .from('matches')
-          .select('id, kickoff_utc, stage, predictions(user_id, points)')
+          .select('id, kickoff_utc, stage, home_team, away_team, predictions(user_id, points)')
           .eq('status', 'finished')
           .order('kickoff_utc', { ascending: false }),
         supabase.from('matches').select('stage').eq('status', 'scheduled'),
@@ -63,11 +72,14 @@ export function Leaderboard() {
         id: number
         kickoff_utc: string
         stage: string
+        home_team: string
+        away_team: string
         predictions: { user_id: string; points: number }[]
       }>
       const scheduled = (scheduledData ?? []) as { stage: string }[]
 
       setRows(lb)
+      setAllMatches(matches)
       setScheduledCount(scheduled.length)
       setPointsAtStake(
         scheduled.reduce((sum, m) => sum + 9 * (STAGE_MULTIPLIERS[m.stage] ?? 1), 0)
@@ -132,7 +144,7 @@ export function Leaderboard() {
         <h1 className="text-lg font-bold text-gray-800 mb-4">Leaderboard</h1>
 
         <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1">
-          {(['standings', 'form'] as Tab[]).map(t => (
+          {(['standings', 'form', 'history'] as Tab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -140,7 +152,7 @@ export function Leaderboard() {
                 tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              {t === 'standings' ? 'Standings' : 'Recent Form'}
+              {t === 'standings' ? 'Standings' : t === 'form' ? 'Recent Form' : 'History'}
             </button>
           ))}
         </div>
@@ -154,6 +166,14 @@ export function Leaderboard() {
             pointsAtStake={pointsAtStake}
             scheduledCount={scheduledCount}
           />
+        ) : tab === 'history' ? (
+          <Suspense fallback={<div className="text-center py-16 text-gray-400">Loading…</div>}>
+            <PlacementHistoryTab
+              matchData={allMatches}
+              leaderboardRows={rows}
+              myId={session!.user.id}
+            />
+          </Suspense>
         ) : (
           <FormTab
             formRows={formRows}
