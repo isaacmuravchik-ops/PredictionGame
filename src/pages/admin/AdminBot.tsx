@@ -153,6 +153,22 @@ export function AdminBot() {
     }
   }
 
+  async function handleClear() {
+    if (!confirm('Delete all bot predictions for upcoming matches? This cannot be undone.')) return
+    setBusy(true)
+    setActionError(null)
+    setActionStatus(null)
+    try {
+      const data = await callBotApi('bot-clear', session!.access_token)
+      setActionStatus(`Cleared ${data.deleted} upcoming prediction${data.deleted !== 1 ? 's' : ''}.`)
+      await load()
+    } catch (e: any) {
+      setActionError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handlePredict(allUpcoming = false, force = false) {
     setBusy(true)
     setActionError(null)
@@ -232,10 +248,17 @@ export function AdminBot() {
               busy={busy}
             />
             <ActionCard
-              title="Re-run All Predictions"
-              description="Overwrite all existing upcoming predictions. Use this after fixing the bot logic to refresh player selections."
-              buttonLabel="Re-run All"
-              onAction={() => handlePredict(true, true)}
+              title="Re-run Existing Predictions"
+              description="Overwrite already-predicted matches with fresh Claude picks. Only re-runs matches that already have a prediction — won't create new ones."
+              buttonLabel="Re-run Existing"
+              onAction={() => handlePredict(false, true)}
+              busy={busy}
+            />
+            <ActionCard
+              title="Clear Upcoming Predictions"
+              description="Delete all bot predictions for matches not yet kicked off. Use this to reset before re-generating cleanly."
+              buttonLabel="Clear Upcoming"
+              onAction={handleClear}
               busy={busy}
             />
           </div>
