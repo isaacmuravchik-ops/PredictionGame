@@ -50,8 +50,9 @@ export default async function handler(req: any, res: any) {
     .gt('kickoff_utc', now.toISOString())
     .order('kickoff_utc', { ascending: true })
 
+  // force=true needs the full upcoming set so it can find all existing predictions
   const { data: matches } = await (
-    allUpcoming ? baseQuery : baseQuery.lte('kickoff_utc', cutoff.toISOString())
+    allUpcoming || force ? baseQuery : baseQuery.lte('kickoff_utc', cutoff.toISOString())
   )
 
   if (!matches || matches.length === 0) {
@@ -66,7 +67,10 @@ export default async function handler(req: any, res: any) {
     .in('match_id', matches.map((m: any) => m.id))
 
   const existingIds = new Set((existingPreds ?? []).map((p: any) => p.match_id))
-  const unpredicted = force ? matches : matches.filter((m: any) => !existingIds.has(m.id))
+  // force=true: re-run only matches that already have a prediction (no new ones)
+  const unpredicted = force
+    ? matches.filter((m: any) => existingIds.has(m.id))
+    : matches.filter((m: any) => !existingIds.has(m.id))
 
   if (unpredicted.length === 0) {
     return res.status(200).json({ predicted: 0, message: 'All upcoming matches already predicted' })
@@ -88,6 +92,12 @@ export default async function handler(req: any, res: any) {
     const homeRoster: string[] = rosterMap[match.home_team] ?? []
     const awayRoster: string[] = rosterMap[match.away_team] ?? []
     const allPlayers = [...homeRoster, ...awayRoster]
+
+    if (allPlayers.length === 0) {
+      results.push({ matchId: match.id, success: false, error: 'No roster data — skipping placeholder match' })
+      continue
+    }
+
     const mult = STAGE_MULTIPLIERS[match.stage] ?? 1.0
     const stageName = STAGE_LABELS[match.stage] ?? match.stage
 
