@@ -151,12 +151,16 @@ Return ONLY valid JSON with no markdown wrapping:
 
       let playerName: string = String(parsed.player ?? '').trim()
       if (allPlayers.length > 0) {
-        const lp = playerName.toLowerCase()
-        const found = allPlayers.find(
-          p => p.toLowerCase() === lp ||
-               p.toLowerCase().split(' ').some(part => lp.includes(part)) ||
-               lp.split(' ').some(part => p.toLowerCase().includes(part))
-        )
+        // Strip accents so "Mbappe" matches "Mbappé", etc.
+        const norm = (s: string) =>
+          s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+        const lp = norm(playerName)
+        const found = allPlayers.find(p => {
+          const np = norm(p)
+          return np === lp ||
+            np.split(' ').every(part => lp.includes(part)) ||
+            lp.split(' ').every(part => np.includes(part))
+        })
         if (!found) {
           const fallback = firstTeam === 'home' ? homeRoster : firstTeam === 'away' ? awayRoster : homeRoster
           playerName = fallback[0] ?? allPlayers[0] ?? playerName
