@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { useAuth } from '../contexts/AuthContext'
@@ -36,6 +36,14 @@ export function Matches() {
     }
     load()
   }, [session])
+
+  useLayoutEffect(() => {
+    if (loading) return
+    const saved = sessionStorage.getItem('matches-scroll-y')
+    if (!saved) return
+    sessionStorage.removeItem('matches-scroll-y')
+    window.scrollTo({ top: Number(saved) })
+  }, [loading])
 
   if (loading) {
     return (
@@ -109,6 +117,7 @@ function MatchRow({ match, prediction }: { match: Match; prediction?: Prediction
   return (
     <Link
       to={`/matches/${match.id}`}
+      onClick={() => sessionStorage.setItem('matches-scroll-y', String(window.scrollY))}
       className="block bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3 hover:shadow-md transition-shadow"
     >
       {isFinished && match.home_score != null ? (
