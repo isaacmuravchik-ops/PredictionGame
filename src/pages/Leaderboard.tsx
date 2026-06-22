@@ -9,7 +9,11 @@ const PlacementHistoryTab = lazy(() =>
   import('./PlacementHistoryTab').then(m => ({ default: m.PlacementHistoryTab }))
 )
 
-type Tab = 'standings' | 'form' | 'history'
+const WinOddsTab = lazy(() =>
+  import('./WinOddsTab').then(m => ({ default: m.WinOddsTab }))
+)
+
+type Tab = 'standings' | 'form' | 'history' | 'odds'
 
 interface RecentScore {
   pts: number
@@ -49,6 +53,7 @@ export function Leaderboard() {
   const [loading, setLoading] = useState(true)
   const [pointsAtStake, setPointsAtStake] = useState(0)
   const [scheduledCount, setScheduledCount] = useState(0)
+  const [scheduledStages, setScheduledStages] = useState<{ stage: string }[]>([])
   const [allMatches, setAllMatches] = useState<Array<{
     id: number; kickoff_utc: string; stage: string
     home_team: string; away_team: string
@@ -81,6 +86,7 @@ export function Leaderboard() {
       setRows(lb)
       setAllMatches(matches)
       setScheduledCount(scheduled.length)
+      setScheduledStages(scheduled)
       setPointsAtStake(
         scheduled.reduce((sum, m) => sum + 9 * (STAGE_MULTIPLIERS[m.stage] ?? 1), 0)
       )
@@ -144,7 +150,7 @@ export function Leaderboard() {
         <h1 className="text-lg font-bold text-gray-800 mb-4">Leaderboard</h1>
 
         <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1">
-          {(['standings', 'form', 'history'] as Tab[]).map(t => (
+          {(['standings', 'form', 'history', 'odds'] as Tab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -152,7 +158,7 @@ export function Leaderboard() {
                 tab === t ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              {t === 'standings' ? 'Standings' : t === 'form' ? 'Recent Form' : 'History'}
+              {t === 'standings' ? 'Standings' : t === 'form' ? 'Recent Form' : t === 'history' ? 'History' : 'Win Odds'}
             </button>
           ))}
         </div>
@@ -172,6 +178,14 @@ export function Leaderboard() {
               matchData={allMatches}
               leaderboardRows={rows}
               myId={session!.user.id}
+            />
+          </Suspense>
+        ) : tab === 'odds' ? (
+          <Suspense fallback={<div className="text-center py-16 text-gray-400">Loading…</div>}>
+            <WinOddsTab
+              lbData={rows}
+              matchData={allMatches}
+              scheduledData={scheduledStages}
             />
           </Suspense>
         ) : (
