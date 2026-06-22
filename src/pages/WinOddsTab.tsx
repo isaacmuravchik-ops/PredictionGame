@@ -38,50 +38,17 @@ function computeEfficiencies(
   lbData: LeaderboardRow[],
   matchData: MatchWithPreds[],
 ): Map<string, number> {
-  // Build participation index: user_id → Set of match IDs they predicted
-  const participationIndex = new Map<string, Set<number>>()
-  for (const match of matchData) {
-    for (const pred of match.predictions) {
-      if (!participationIndex.has(pred.user_id)) {
-        participationIndex.set(pred.user_id, new Set())
-      }
-      participationIndex.get(pred.user_id)!.add(match.id)
-    }
-  }
-
-  // Precompute max pts per match
-  const matchMaxPts = new Map<number, number>()
-  for (const match of matchData) {
-    matchMaxPts.set(match.id, 9 * (STAGE_MULTIPLIERS[match.stage] ?? 1))
-  }
+  // Use ALL finished matches as the denominator so that missed predictions
+  // count as 0 pts — this ensures current standings are properly reflected
+  // and inactive players don't get inflated projections.
+  const totalMaxPts = matchData.reduce(
+    (sum, m) => sum + 9 * (STAGE_MULTIPLIERS[m.stage] ?? 1), 0
+  )
 
   const efficiencies = new Map<string, number>()
-  const computed: number[] = []
-
   for (const row of lbData) {
-    const participated = participationIndex.get(row.user_id)
-    if (!participated || participated.size === 0) continue
-
-    let maxPossible = 0
-    for (const matchId of participated) {
-      maxPossible += matchMaxPts.get(matchId) ?? 0
-    }
-    if (maxPossible === 0) continue
-
-    const eff = Number(row.total_points) / maxPossible
+    const eff = totalMaxPts > 0 ? Number(row.total_points) / totalMaxPts : 0.40
     efficiencies.set(row.user_id, eff)
-    computed.push(eff)
-  }
-
-  // Players with no prediction history get the mean efficiency
-  const avgEff = computed.length > 0
-    ? computed.reduce((a, b) => a + b, 0) / computed.length
-    : 0.40
-
-  for (const row of lbData) {
-    if (!efficiencies.has(row.user_id)) {
-      efficiencies.set(row.user_id, avgEff)
-    }
   }
 
   return efficiencies
