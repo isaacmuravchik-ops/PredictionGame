@@ -235,6 +235,51 @@ export function AdminFixtures() {
   const [preview, setPreview]       = useState<ParsedMatch[] | null>(null)
   const [importing, setImporting]   = useState(false)
   const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; error?: string } | null>(null)
+  const [snapshotting, setSnapshotting] = useState(false)
+  const [snapshotError, setSnapshotError] = useState<string | null>(null)
+
+  async function handleSnapshot() {
+    setSnapshotting(true)
+    setSnapshotError(null)
+    try {
+      const [
+        { data: matches,     error: e1 },
+        { data: predictions, error: e2 },
+        { data: profiles,    error: e3 },
+        { data: leaderboard, error: e4 },
+        { data: events,      error: e5 },
+      ] = await Promise.all([
+        supabase.from('matches').select('*').order('kickoff_utc'),
+        supabase.from('predictions').select('*').order('created_at'),
+        supabase.from('profiles').select('*').order('created_at'),
+        supabase.from('leaderboard').select('*'),
+        supabase.from('match_events').select('*').order('id'),
+      ])
+
+      const firstError = e1 ?? e2 ?? e3 ?? e4 ?? e5
+      if (firstError) throw new Error(firstError.message)
+
+      const snapshot = {
+        exported_at: new Date().toISOString(),
+        matches,
+        predictions,
+        profiles,
+        leaderboard,
+        match_events: events,
+      }
+
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `prediction-game-snapshot-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setSnapshotError(err instanceof Error ? err.message : 'Snapshot failed')
+    }
+    setSnapshotting(false)
+  }
 
   async function handleFetch() {
     setFetching(true)
@@ -321,7 +366,19 @@ export function AdminFixtures() {
 
   return (
     <AdminLayout>
-      <h1 className="text-lg font-bold text-gray-800 mb-1">Fixture Sync</h1>
+      <div className="flex items-start justify-between mb-1 gap-4">
+        <h1 className="text-lg font-bold text-gray-800">Fixture Sync</h1>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={handleSnapshot}
+            disabled={snapshotting}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-gray-700 font-medium text-sm rounded-lg transition-colors whitespace-nowrap"
+          >
+            {snapshotting ? 'Downloading…' : 'Download Snapshot'}
+          </button>
+          {snapshotError && <p className="text-red-600 text-xs">{snapshotError}</p>}
+        </div>
+      </div>
       <p className="text-sm text-gray-500 mb-5">
         Fetch and import fixtures from openfootball. Each match's UTC offset is read
         directly from the JSON (e.g. "13:00 UTC-6"), so times are stored correctly
