@@ -317,7 +317,7 @@ export function AdminFixtures() {
     )
 
     const toInsert: ParsedMatch[] = []
-    const toUpdate: Array<{ ext_id: string; home_team: string; away_team: string; kickoff_utc: string }> = []
+    const toUpdate: Array<{ ext_id: string; stage: string; group_label: string | null; home_team: string; away_team: string; kickoff_utc: string }> = []
 
     for (const m of preview) {
       const existing = existingMap.get(m.ext_id)
@@ -328,8 +328,8 @@ export function AdminFixtures() {
         // Finished match — never touch it.
       } else if (isPlaceholderName(existing.home_team) || isPlaceholderName(existing.away_team)) {
         // Placeholder team name → fill in with real teams from the JSON.
-        // Only update the three fields that change; all other columns are left alone.
-        toUpdate.push({ ext_id: m.ext_id, home_team: m.home_team, away_team: m.away_team, kickoff_utc: m.kickoff_utc })
+        // stage/group_label must be included so upsert can satisfy NOT NULL on the insert path.
+        toUpdate.push({ ext_id: m.ext_id, stage: m.stage, group_label: m.group_label, home_team: m.home_team, away_team: m.away_team, kickoff_utc: m.kickoff_utc })
       }
       // else: scheduled match with real team names → leave completely untouched.
     }
