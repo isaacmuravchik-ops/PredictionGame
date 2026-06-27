@@ -21,11 +21,11 @@ interface OddsRow {
   p1: number
   p2: number
   p3: number
+  pMoney: number
   ev: number
 }
 
-const NUM_SIMULATIONS = 2000
-const STDDEV_FRACTION = 0.25
+const NUM_SIMULATIONS = 10_000
 
 function sampleNormal(mean: number, stddev: number): number {
   const u1 = Math.max(Math.random(), Number.EPSILON)
@@ -37,18 +37,32 @@ function sampleNormal(mean: number, stddev: number): number {
 function computeEfficiencies(
   lbData: LeaderboardRow[],
   matchData: MatchWithPreds[],
-): Map<string, number> {
-  // Use ALL finished matches as the denominator so that missed predictions
-  // count as 0 pts — this ensures current standings are properly reflected
-  // and inactive players don't get inflated projections.
+): Map<string, { mean: number; stddev: number }> {
   const totalMaxPts = matchData.reduce(
     (sum, m) => sum + 9 * (STAGE_MULTIPLIERS[m.stage] ?? 1), 0
   )
 
-  const efficiencies = new Map<string, number>()
+  const efficiencies = new Map<string, { mean: number; stddev: number }>()
   for (const row of lbData) {
-    const eff = totalMaxPts > 0 ? Number(row.total_points) / totalMaxPts : 0.40
-    efficiencies.set(row.user_id, eff)
+    const mean = totalMaxPts > 0 ? Number(row.total_points) / totalMaxPts : 0.40
+
+    // Compute per-match efficiency ratios to derive player-specific variance
+    const deviations: number[] = []
+    for (const match of matchData) {
+      const matchMaxPts = 9 * (STAGE_MULTIPLIERS[match.stage] ?? 1)
+      if (matchMaxPts === 0) continue
+      const pred = match.predictions.find(p => p.user_id === row.user_id)
+      const ratio = pred ? Number(pred.points) / matchMaxPts : 0
+      deviations.push(ratio - mean)
+    }
+
+    let stddev = 0.20
+    if (deviations.length >= 2) {
+      const variance = deviations.reduce((s, d) => s + d * d, 0) / deviations.length
+      stddev = Math.max(Math.sqrt(variance), 0.05)
+    }
+
+    efficiencies.set(row.user_id, { mean, stddev })
   }
 
   return efficiencies
@@ -56,7 +70,7 @@ function computeEfficiencies(
 
 function runMonteCarlo(
   lbData: LeaderboardRow[],
-  efficiencies: Map<string, number>,
+  efficiencies: Map<string, { mean: number; stddev: number }>,
   remainingMaxPts: number[],
 ): OddsRow[] {
   const wins1: Record<string, number> = {}
@@ -68,30 +82,31 @@ function runMonteCarlo(
     wins3[row.user_id] = 0
   }
 
-  const currentPts = lbData.map(row => ({
-    user_id: row.user_id,
-    pts: Number(row.total_points),
-    eff: efficiencies.get(row.user_id) ?? 0.40,
-    eligible: isEligibleForPrize(row),
-  }))
+  const currentPts = lbData.map(row => {
+    const eff = efficiencies.get(row.user_id) ?? { mean: 0.40, stddev: 0.20 }
+    return {
+      user_id: row.user_id,
+      pts: Number(row.total_points),
+      mean: eff.mean,
+      stddev: eff.stddev,
+      eligible: isEligibleForPrize(row),
+    }
+  })
 
   for (let sim = 0; sim < NUM_SIMULATIONS; sim++) {
-    // Project each player's final total
     const projected = currentPts.map(p => {
       let total = p.pts
       for (const maxPts of remainingMaxPts) {
-        const mean = p.eff * maxPts
-        const stddev = STDDEV_FRACTION * maxPts
+        const mean = p.mean * maxPts
+        const stddev = p.stddev * maxPts
         const sample = Math.max(0, Math.min(maxPts, sampleNormal(mean, stddev)))
         total += sample
       }
       return { user_id: p.user_id, total, eligible: p.eligible }
     })
 
-    // Sort all players descending by projected total
     projected.sort((a, b) => b.total - a.total || a.user_id.localeCompare(b.user_id))
 
-    // Assign prize slots to top 3 eligible players
     let prizeSlot = 1
     for (const p of projected) {
       if (!p.eligible) continue
@@ -105,15 +120,21 @@ function runMonteCarlo(
 
   return lbData
     .filter(isEligibleForPrize)
-    .map(row => ({
-      user_id: row.user_id,
-      team_name: row.team_name,
-      real_name: row.real_name,
-      p1: wins1[row.user_id] / NUM_SIMULATIONS,
-      p2: wins2[row.user_id] / NUM_SIMULATIONS,
-      p3: wins3[row.user_id] / NUM_SIMULATIONS,
-      ev: (wins1[row.user_id] * PRIZE_AMOUNTS[0] + wins2[row.user_id] * PRIZE_AMOUNTS[1] + wins3[row.user_id] * PRIZE_AMOUNTS[2]) / NUM_SIMULATIONS,
-    }))
+    .map(row => {
+      const p1 = wins1[row.user_id] / NUM_SIMULATIONS
+      const p2 = wins2[row.user_id] / NUM_SIMULATIONS
+      const p3 = wins3[row.user_id] / NUM_SIMULATIONS
+      return {
+        user_id: row.user_id,
+        team_name: row.team_name,
+        real_name: row.real_name,
+        p1,
+        p2,
+        p3,
+        pMoney: p1 + p2 + p3,
+        ev: (wins1[row.user_id] * PRIZE_AMOUNTS[0] + wins2[row.user_id] * PRIZE_AMOUNTS[1] + wins3[row.user_id] * PRIZE_AMOUNTS[2]) / NUM_SIMULATIONS,
+      }
+    })
     .sort((a, b) => b.ev - a.ev)
 }
 
@@ -126,11 +147,11 @@ function ProbBar({ pct }: { pct: number }) {
   )
 }
 
-function ProbCell({ p }: { p: number }) {
+function ProbCell({ p, className = '' }: { p: number; className?: string }) {
   const pct = Math.round(p * 100)
   const textCls = pct >= 40 ? 'text-green-700 font-bold' : pct >= 10 ? 'text-amber-600 font-semibold' : 'text-gray-300'
   return (
-    <td className="py-3 px-2 text-right align-top w-20">
+    <td className={`py-3 px-2 text-right align-top w-20 ${className}`}>
       <span className={`text-sm tabular-nums ${textCls}`}>{pct}%</span>
       <ProbBar pct={pct} />
     </td>
@@ -165,7 +186,7 @@ export function WinOddsTab({ lbData, matchData, scheduledData }: WinOddsTabProps
       <div className="bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 text-xs text-blue-700 space-y-0.5">
         <p className="font-semibold">Winning odds — based on {NUM_SIMULATIONS.toLocaleString()} simulations</p>
         <p className="text-blue-500">
-          Using each player's historical scoring efficiency.{' '}
+          Using each player's historical scoring efficiency and personal variance.{' '}
           {matchesRemaining} match{matchesRemaining !== 1 ? 'es' : ''} remaining,
           up to {totalRemainingPts.toLocaleString(undefined, { maximumFractionDigits: 0 })} pts at stake.
         </p>
@@ -180,15 +201,16 @@ export function WinOddsTab({ lbData, matchData, scheduledData }: WinOddsTabProps
               <tr className="text-xs text-gray-400 uppercase tracking-wide">
                 <th className="text-center py-3 px-3 font-medium w-8">#</th>
                 <th className="text-left py-3 px-3 font-medium">Player</th>
-                <th className="text-right py-3 px-2 font-medium w-20">
+                <th className="text-right py-3 px-2 font-medium w-20 hidden sm:table-cell">
                   <span className="text-yellow-600">🥇</span> $350
                 </th>
-                <th className="text-right py-3 px-2 font-medium w-20">
+                <th className="text-right py-3 px-2 font-medium w-20 hidden sm:table-cell">
                   <span className="text-gray-400">🥈</span> $150
                 </th>
-                <th className="text-right py-3 px-2 font-medium w-20">
+                <th className="text-right py-3 px-2 font-medium w-20 hidden sm:table-cell">
                   <span className="text-orange-500">🥉</span> $60
                 </th>
+                <th className="text-right py-3 px-2 font-medium w-20">💰 Any</th>
                 <th className="text-right py-3 px-3 font-medium w-20 hidden sm:table-cell">EV</th>
               </tr>
             </thead>
@@ -202,9 +224,10 @@ export function WinOddsTab({ lbData, matchData, scheduledData }: WinOddsTabProps
                       <p className="text-xs text-gray-400 leading-tight mt-0.5">{row.real_name}</p>
                     )}
                   </td>
-                  <ProbCell p={row.p1} />
-                  <ProbCell p={row.p2} />
-                  <ProbCell p={row.p3} />
+                  <ProbCell p={row.p1} className="hidden sm:table-cell" />
+                  <ProbCell p={row.p2} className="hidden sm:table-cell" />
+                  <ProbCell p={row.p3} className="hidden sm:table-cell" />
+                  <ProbCell p={row.pMoney} />
                   <td className="py-3 px-3 text-right hidden sm:table-cell">
                     <span className="text-sm font-bold text-gray-700">
                       ${row.ev.toFixed(0)}
@@ -218,7 +241,7 @@ export function WinOddsTab({ lbData, matchData, scheduledData }: WinOddsTabProps
       )}
 
       <p className="text-[10px] text-gray-400 text-right">
-        Simulation uses historical scoring efficiency per player · Excludes AI &amp; (No Prize) entries
+        Simulation uses per-player scoring efficiency &amp; variance · Excludes AI &amp; (No Prize) entries
       </p>
     </div>
   )
