@@ -212,6 +212,19 @@ function summariseStructure(data: any): string {
   return lines.join('\n')
 }
 
+function isPlaceholderName(name: string): boolean {
+  const n = name.trim().toLowerCase()
+  return (
+    n === 'tbd' ||
+    n === '' ||
+    n.startsWith('winner') ||
+    n.startsWith('runner') ||
+    n.startsWith('loser') ||
+    /^[wl]\d+/.test(n) ||   // W49, L50 etc.
+    n.includes(' of ')       // "Winner of Match 49"
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AdminFixtures() {
@@ -221,7 +234,7 @@ export function AdminFixtures() {
   const [rawDebug, setRawDebug]     = useState<string | null>(null)
   const [preview, setPreview]       = useState<ParsedMatch[] | null>(null)
   const [importing, setImporting]   = useState(false)
-  const [importResult, setImportResult] = useState<{ count: number; error?: string } | null>(null)
+  const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; error?: string } | null>(null)
 
   async function handleFetch() {
     setFetching(true)
@@ -249,32 +262,59 @@ export function AdminFixtures() {
     if (!preview) return
     setImporting(true)
 
-    const { data: finishedRows } = await supabase
-      .from('matches').select('ext_id').eq('status', 'finished')
-    const finishedIds = new Set((finishedRows ?? []).map(r => r.ext_id as string))
-    const toUpsert = preview.filter(m => !finishedIds.has(m.ext_id))
+    // Fetch all existing matches so we can decide per-row what to do.
+    const { data: existingRows } = await supabase
+      .from('matches').select('ext_id, status, home_team, away_team')
+    const existingMap = new Map(
+      (existingRows ?? [])
+        .filter(r => r.ext_id)
+        .map(r => [r.ext_id as string, r as { status: string; home_team: string; away_team: string }])
+    )
 
-    // Batch into chunks of 50 to stay within Supabase request limits.
+    const toInsert: ParsedMatch[] = []
+    const toUpdate: Array<{ ext_id: string; home_team: string; away_team: string; kickoff_utc: string }> = []
+
+    for (const m of preview) {
+      const existing = existingMap.get(m.ext_id)
+      if (!existing) {
+        // Brand-new match — insert it.
+        toInsert.push(m)
+      } else if (existing.status === 'finished') {
+        // Finished match — never touch it.
+      } else if (isPlaceholderName(existing.home_team) || isPlaceholderName(existing.away_team)) {
+        // Placeholder team name → fill in with real teams from the JSON.
+        // Only update the three fields that change; all other columns are left alone.
+        toUpdate.push({ ext_id: m.ext_id, home_team: m.home_team, away_team: m.away_team, kickoff_utc: m.kickoff_utc })
+      }
+      // else: scheduled match with real team names → leave completely untouched.
+    }
+
     const CHUNK = 50
-    let importedCount = 0
+    let insertedCount = 0
+    let updatedCount = 0
     let firstError: string | null = null
 
-    for (let i = 0; i < toUpsert.length; i += CHUNK) {
-      const chunk = toUpsert.slice(i, i + CHUNK)
-      const { error } = await supabase
-        .from('matches').upsert(chunk, { onConflict: 'ext_id' })
-      if (error) {
-        firstError = `Batch ${Math.floor(i / CHUNK) + 1}: ${error.message}`
-        break
-      }
-      importedCount += chunk.length
+    for (let i = 0; i < toInsert.length && !firstError; i += CHUNK) {
+      const chunk = toInsert.slice(i, i + CHUNK)
+      const { error } = await supabase.from('matches').insert(chunk)
+      if (error) { firstError = `Insert batch ${Math.floor(i / CHUNK) + 1}: ${error.message}`; break }
+      insertedCount += chunk.length
+    }
+
+    // Upsert with a minimal payload so only home_team/away_team/kickoff_utc are written.
+    for (let i = 0; i < toUpdate.length && !firstError; i += CHUNK) {
+      const chunk = toUpdate.slice(i, i + CHUNK)
+      const { error } = await supabase.from('matches').upsert(chunk, { onConflict: 'ext_id' })
+      if (error) { firstError = `Update batch ${Math.floor(i / CHUNK) + 1}: ${error.message}`; break }
+      updatedCount += chunk.length
     }
 
     setImporting(false)
+    const skipped = preview.length - toInsert.length - toUpdate.length
     if (firstError) {
-      setImportResult({ count: importedCount, error: firstError })
+      setImportResult({ inserted: insertedCount, updated: updatedCount, skipped, error: firstError })
     } else {
-      setImportResult({ count: importedCount })
+      setImportResult({ inserted: insertedCount, updated: updatedCount, skipped })
       setPreview(null)
     }
   }
@@ -329,7 +369,7 @@ export function AdminFixtures() {
               disabled={importing}
               className="px-4 py-2 bg-green-700 hover:bg-green-800 disabled:opacity-40 text-white font-medium text-sm rounded-lg transition-colors"
             >
-              {importing ? 'Importing…' : `Import ${preview.length} matches`}
+              {importing ? 'Importing…' : `Import new matches`}
             </button>
           </div>
           <div className="overflow-x-auto -mx-2">
@@ -362,8 +402,8 @@ export function AdminFixtures() {
       {importResult && (
         <div className={`rounded-xl px-4 py-3 text-sm mt-4 ${importResult.error ? 'bg-red-50 text-red-800' : 'bg-green-50 text-green-800'}`}>
           {importResult.error
-            ? `Import failed: ${importResult.error}`
-            : `✓ ${importResult.count} matches imported. Check the Results tab to verify.`}
+            ? `Import failed after ${importResult.inserted} inserted / ${importResult.updated} updated: ${importResult.error}`
+            : `✓ ${importResult.inserted} new matches inserted, ${importResult.updated} placeholder matches filled in, ${importResult.skipped} existing matches left untouched.`}
         </div>
       )}
     </AdminLayout>
