@@ -18,6 +18,7 @@ export function MatchDetail() {
   const [allPredictions, setAllPredictions] = useState<PredictionWithTeam[]>([])
   const [matchEvents, setMatchEvents] = useState<MatchEvent[]>([])
   const [players, setPlayers] = useState<{ team: string; name: string }[]>([])
+  const [leaderboardRanks, setLeaderboardRanks] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -32,11 +33,12 @@ export function MatchDetail() {
   useEffect(() => {
     async function load() {
       const matchId = Number(id)
-      const [{ data: mData }, { data: pData }, { data: allData }, { data: evData }] = await Promise.all([
+      const [{ data: mData }, { data: pData }, { data: allData }, { data: evData }, { data: lbData }] = await Promise.all([
         supabase.from('matches').select('*').eq('id', matchId).single(),
         supabase.from('predictions').select('*').eq('match_id', matchId).eq('user_id', session!.user.id).maybeSingle(),
         supabase.from('predictions').select('*, profiles(team_name)').eq('match_id', matchId),
         supabase.from('match_events').select('*').eq('match_id', matchId),
+        supabase.from('leaderboard').select('user_id,total_points'),
       ])
 
       const m = mData as Match | null
@@ -46,6 +48,9 @@ export function MatchDetail() {
       setMyPrediction(p)
       setAllPredictions((allData ?? []) as PredictionWithTeam[])
       setMatchEvents((evData ?? []) as MatchEvent[])
+
+      const lbSorted = [...(lbData ?? [])].sort((a, b) => Number(b.total_points) - Number(a.total_points))
+      setLeaderboardRanks(new Map(lbSorted.map((r, i) => [r.user_id, i + 1])))
 
       // Fetch squad players for both teams once we know the match teams.
       if (m) {
@@ -171,6 +176,7 @@ export function MatchDetail() {
             allPredictions={allPredictions}
             matchEvents={matchEvents}
             userId={session!.user.id}
+            leaderboardRanks={leaderboardRanks}
           />
         )}
       </main>
@@ -307,12 +313,13 @@ function Stepper({ value, onChange }: { value: number; onChange: (v: number) => 
 
 // ─── Locked / finished view ────────────────────────────────────────────────────
 
-function LockedView({ match, myPrediction, allPredictions, matchEvents, userId }: {
+function LockedView({ match, myPrediction, allPredictions, matchEvents, userId, leaderboardRanks }: {
   match: Match
   myPrediction: Prediction | null
   allPredictions: PredictionWithTeam[]
   matchEvents: MatchEvent[]
   userId: string
+  leaderboardRanks: Map<string, number>
 }) {
   const state = getMatchState(match.kickoff_utc, match.status)
   const isFinished = state === 'finished'
@@ -387,7 +394,11 @@ function LockedView({ match, myPrediction, allPredictions, matchEvents, userId }
               <tbody className="divide-y divide-gray-50">
                 {allPredictions
                   .slice()
-                  .sort((a, b) => Number(b.points) - Number(a.points))
+                  .sort((a, b) =>
+                    isFinished
+                      ? Number(b.points) - Number(a.points)
+                      : (leaderboardRanks.get(a.user_id) ?? 9999) - (leaderboardRanks.get(b.user_id) ?? 9999)
+                  )
                   .map(p => (
                     <tr key={p.id} className={p.user_id === userId ? 'bg-green-50' : ''}>
                       <td className="py-2 pr-2 font-medium text-gray-800 text-xs">
