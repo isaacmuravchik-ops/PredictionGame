@@ -25,7 +25,7 @@ export function Matches() {
   useEffect(() => {
     async function load() {
       const [{ data: mData }, { data: pData }] = await Promise.all([
-        supabase.from('matches').select('*').order('kickoff_utc'),
+        supabase.from('matches').select('*').order('kickoff_utc').limit(500),
         supabase.from('predictions').select('*').eq('user_id', session!.user.id),
       ])
       setMatches((mData ?? []) as Match[])

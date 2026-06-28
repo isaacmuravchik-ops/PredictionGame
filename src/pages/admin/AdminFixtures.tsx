@@ -309,7 +309,7 @@ export function AdminFixtures() {
 
     // Fetch all existing matches so we can decide per-row what to do.
     const { data: existingRows } = await supabase
-      .from('matches').select('ext_id, status, home_team, away_team')
+      .from('matches').select('ext_id, status, home_team, away_team').limit(500)
     const existingMap = new Map(
       (existingRows ?? [])
         .filter(r => r.ext_id)
@@ -346,12 +346,17 @@ export function AdminFixtures() {
       insertedCount += chunk.length
     }
 
-    // Upsert with a minimal payload so only home_team/away_team/kickoff_utc are written.
-    for (let i = 0; i < toUpdate.length && !firstError; i += CHUNK) {
-      const chunk = toUpdate.slice(i, i + CHUNK)
-      const { error } = await supabase.from('matches').upsert(chunk, { onConflict: 'ext_id' })
-      if (error) { firstError = `Update batch ${Math.floor(i / CHUNK) + 1}: ${error.message}`; break }
-      updatedCount += chunk.length
+    // Update placeholder matches with real team names using individual update queries.
+    // We use .update().eq('ext_id', ...) rather than upsert so this works even if
+    // ext_id doesn't have a unique constraint in the database.
+    for (let i = 0; i < toUpdate.length && !firstError; i++) {
+      const m = toUpdate[i]
+      const { error } = await supabase
+        .from('matches')
+        .update({ stage: m.stage, group_label: m.group_label, home_team: m.home_team, away_team: m.away_team, kickoff_utc: m.kickoff_utc })
+        .eq('ext_id', m.ext_id)
+      if (error) { firstError = `Update ${m.ext_id}: ${error.message}`; break }
+      updatedCount++
     }
 
     setImporting(false)
