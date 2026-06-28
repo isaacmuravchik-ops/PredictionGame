@@ -216,11 +216,14 @@ function isPlaceholderName(name: string): boolean {
   const n = name.trim().toLowerCase()
   return (
     n === 'tbd' ||
+    n === 'tba' ||
     n === '' ||
     n.startsWith('winner') ||
     n.startsWith('runner') ||
     n.startsWith('loser') ||
     /^[wl]\d+/.test(n) ||   // W49, L50 etc.
+    /^\d/.test(n) ||         // 1A, 2B, 3A/B/C/D/F etc. (group position codes)
+    n.includes('/') ||       // 3A/B/C/D/F (best 3rd-place groups)
     n.includes(' of ')       // "Winner of Match 49"
   )
 }
